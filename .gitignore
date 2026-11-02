@@ -1,0 +1,24 @@
+.agent/
+.DS_Store
+build/
+*.DS_Store
+project-map.md
+.mimocode/
+Flagship/Flagship.app/
+Flagship/Flagship Beta.app/
+Flagship.app/
+*.zip
+.opencode/
+/.graphify/
+/.serena/
+
+# Defensive (future-proofing)
+*.dmg
+*.pkg
+*.log
+.idea/
+.vscode/
+DerivedData/
+*.xcuserstate
+*.xcodeproj
+*.xcworkspace
