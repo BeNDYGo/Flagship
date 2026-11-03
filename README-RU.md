@@ -1,15 +1,30 @@
-<p align="center">
+<div align="center">
   <img src="Icon.png" width="96" height="96" alt="Flagship Icon" />
-</p>
+  <h1>Flagship</h1>
 
-# Flagship
+  <p>
+    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.2.1-007AFF?style=flat-square" alt="Version"></a>
+    <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-13.0%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+"></a>
+    <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
+    <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
+  </p>
 
-[English](README.md) | **Русский** | [简体中文](README-ZH.md) | [日本語](README-JA.md)
+  <p>
+    <a href="README.md">English</a> |
+    <b>Русский</b> |
+    <a href="README-ZH.md">简体中文</a> |
+    <a href="README-JA.md">日本語</a>
+  </p>
 
-**Flagship** — системный монитор для строки меню macOS. Приложение объединяет отображение сетевой активности в реальном времени с ключевыми показателями состояния системы: загрузкой процессора, оперативной памятью и температурой CPU.
+  <p>
+    <b>Flagship</b> — системный монитор для строки меню macOS. Приложение объединяет отображение сетевой активности в реальном времени с ключевыми показателями состояния системы: загрузкой процессора, оперативной памятью и температурой CPU.
+  </p>
 
-
-![Индикатор Flagship в строке меню](Screenshot1.png)
+  <p>
+    <img src="Screenshot1.png" alt="Индикатор Flagship в строке меню" />
+  </p>
+</div>
 
 |  |  |
 | --- | --- |

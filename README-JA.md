@@ -1,15 +1,30 @@
-<p align="center">
+<div align="center">
   <img src="Icon.png" width="96" height="96" alt="Flagship Icon" />
-</p>
+  <h1>Flagship</h1>
 
-# Flagship
+  <p>
+    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.2.1-007AFF?style=flat-square" alt="Version"></a>
+    <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-13.0%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+"></a>
+    <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
+    <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
+  </p>
 
-[English](README.md) | [Русский](README-RU.md) | [简体中文](README-ZH.md) | **日本語**
+  <p>
+    <a href="README.md">English</a> |
+    <a href="README-RU.md">Русский</a> |
+    <a href="README-ZH.md">简体中文</a> |
+    <b>日本語</b>
+  </p>
 
-**Flagship** は、macOS のメニューバーに常駐する軽量で高機能なシステムモニターアプリです。リアルタイムのネットワークアクティビティと、主要なシステム指標（CPU 負荷、メモリ使用量、CPU 温度）をコンパクトに統合して表示します。
+  <p>
+    <b>Flagship</b> は、macOS のメニューバーに常駐する軽量で高機能なシステムモニターアプリです。リアルタイムのネットワークアクティビティと、主要なシステム指標（CPU 負荷、メモリ使用量、CPU 温度）をコンパクトに統合して表示します。
+  </p>
 
-
-![Flagship メニューバー表示](Screenshot1.png)
+  <p>
+    <img src="Screenshot1.png" alt="Flagship メニューバー表示" />
+  </p>
+</div>
 
 |  |  |
 | --- | --- |

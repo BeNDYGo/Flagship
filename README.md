@@ -1,15 +1,30 @@
-<p align="center">
+<div align="center">
   <img src="Icon.png" width="96" height="96" alt="Flagship Icon" />
-</p>
+  <h1>Flagship</h1>
 
-# Flagship
+  <p>
+    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.2.1-007AFF?style=flat-square" alt="Version"></a>
+    <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-13.0%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+"></a>
+    <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
+    <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
+  </p>
 
-**English** | [Русский](README-RU.md) | [简体中文](README-ZH.md) | [日本語](README-JA.md)
+  <p>
+    <b>English</b> |
+    <a href="README-RU.md">Русский</a> |
+    <a href="README-ZH.md">简体中文</a> |
+    <a href="README-JA.md">日本語</a>
+  </p>
 
-**Flagship** is a lightweight, informative system monitor for the macOS menu bar. The application combines real-time network activity monitoring with vital system metrics: CPU load, RAM usage, and CPU temperature.
+  <p>
+    <b>Flagship</b> is a lightweight, informative system monitor for the macOS menu bar. The application combines real-time network activity monitoring with vital system metrics: CPU load, RAM usage, and CPU temperature.
+  </p>
 
-
-![Flagship Menu Bar Indicator](Screenshot1.png)
+  <p>
+    <img src="Screenshot1.png" alt="Flagship Menu Bar Indicator" />
+  </p>
+</div>
 
 |  |  |
 | --- | --- |

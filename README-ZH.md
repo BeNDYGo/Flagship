@@ -1,15 +1,30 @@
-<p align="center">
+<div align="center">
   <img src="Icon.png" width="96" height="96" alt="Flagship Icon" />
-</p>
+  <h1>Flagship</h1>
 
-# Flagship
+  <p>
+    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.2.1-007AFF?style=flat-square" alt="Version"></a>
+    <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-13.0%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+"></a>
+    <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
+    <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
+  </p>
 
-[English](README.md) | [Русский](README-RU.md) | **简体中文** | [日本語](README-JA.md)
+  <p>
+    <a href="README.md">English</a> |
+    <a href="README-RU.md">Русский</a> |
+    <b>简体中文</b> |
+    <a href="README-JA.md">日本語</a>
+  </p>
 
-**Flagship** 是一款适用于 macOS 菜单栏的轻量、直观的系统监控工具。它将实时网络活动监控与关键系统指标（CPU 负载、内存使用量和 CPU 温度）完美结合。
+  <p>
+    <b>Flagship</b> 是一款适用于 macOS 菜单栏的轻量、直观的系统监控工具。它将实时网络活动监控与关键系统指标（CPU 负载、内存使用量和 CPU 温度）完美结合。
+  </p>
 
-
-![Flagship 菜单栏指示器](Screenshot1.png)
+  <p>
+    <img src="Screenshot1.png" alt="Flagship 菜单栏指示器" />
+  </p>
+</div>
 
 |  |  |
 | --- | --- |
