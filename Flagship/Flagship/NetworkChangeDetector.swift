@@ -21,9 +21,9 @@ class NetworkChangeDetector {
     private var wakeObserver: NSObjectProtocol?
     private var lastInterfaceSet: Set<String> = []
     
-    // Debounce: avoid firing multiple times in quick succession
-    private var lastFireTime: Date = .distantPast
-    private let debounceInterval: TimeInterval = 0.5
+    // Debounce: coalesce rapid network state events into a single notification
+    private var debounceWorkItem: DispatchWorkItem?
+    private let debounceInterval: TimeInterval = 0.8
     
     // SCDynamicStore for network change detection
     private var dynamicStore: SCDynamicStore?
@@ -57,6 +57,9 @@ class NetworkChangeDetector {
         
         interfacePollTimer?.invalidate()
         interfacePollTimer = nil
+        
+        debounceWorkItem?.cancel()
+        debounceWorkItem = nil
     }
     
     // MARK: - Method 1: SCDynamicStore (Darwin network change notifications)
@@ -173,17 +176,15 @@ class NetworkChangeDetector {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            let now = Date()
-            // Debounce: skip if we fired very recently
-            if now.timeIntervalSince(self.lastFireTime) < self.debounceInterval {
-                return
+            self.debounceWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                // Update interface snapshot
+                self.lastInterfaceSet = self.currentInterfaces()
+                self.onNetworkChange?()
             }
-            self.lastFireTime = now
-            
-            // Update interface snapshot
-            self.lastInterfaceSet = self.currentInterfaces()
-            
-            self.onNetworkChange?()
+            self.debounceWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.debounceInterval, execute: workItem)
         }
     }
 }

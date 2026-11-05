@@ -73,24 +73,22 @@ final class IPFlagFetcher {
     }
 
     /// No artificial delay before initial requests or error/same-IP retries.
-    /// Independent checks at 1s and 3s catch routing that settles after the first response.
+    /// Independent check at 3s catches routing that settles after the first response.
     func fetchWithRetry(maxRetries: Int = 2) {
         let previousIP = lastConfirmedIP
         begin()
         session.invalidateAndCancel()
         session = URLSession(configuration: configuration)
         let generation = self.generation
-        verifyingUntil = Date().addingTimeInterval(3)
+        verifyingUntil = Date().addingTimeInterval(4)
         performBatch(generation: generation, previousIP: previousIP, retriesLeft: maxRetries)
-        for delay in [1.0, 3.0] {
-            let work = DispatchWorkItem { [weak self] in
-                guard let self = self, self.generation == generation else { return }
-                self.onUpdate?(Self.unknownFlag, "Checking country…")
-                self.performBatch(generation: generation, previousIP: nil, retriesLeft: 0)
-            }
-            followups.append(work)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.generation == generation else { return }
+            self.onUpdate?(Self.unknownFlag, "Checking country…")
+            self.performBatch(generation: generation, previousIP: nil, retriesLeft: 0)
         }
+        followups.append(work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
     }
 
     private func begin() {
