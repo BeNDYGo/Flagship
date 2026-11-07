@@ -98,9 +98,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.menuBarView.updateSystem(cpu: cpu, memory: memory)
             self.history.append(cpu: cpu, memory: memory)
             self.dashboard.refresh()
-            let temperature = cpu.temperature > 0
-                ? String(format: "CPU temperature (sensor mean): %.0f °C", cpu.temperature)
-                : "CPU temperature: unavailable"
+            let temperature: String
+            if cpu.temperature > 0 {
+                let window = Preferences.shared.temperatureAveragingWindow
+                let avgStr = window > 1 ? "\(window)s avg" : "instant"
+                if cpu.isThermalSpike {
+                    temperature = String(format: "CPU temperature: %.0f °C (%@, burst: %.0f °C)", cpu.temperature, avgStr, cpu.instantTemperature)
+                } else {
+                    temperature = String(format: "CPU temperature: %.0f °C (%@)", cpu.temperature, avgStr)
+                }
+            } else {
+                temperature = "CPU temperature: unavailable"
+            }
             let accessibilitySummary = [
                 self.currentIP.isEmpty ? "" : "IP: \(self.currentIP)",
                 String(format: "CPU: %.0f%%", cpu.usagePercent),

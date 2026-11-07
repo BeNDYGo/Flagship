@@ -32,7 +32,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     convenience init() {
         let windowWidth: CGFloat = 380
-        let contentHeight: CGFloat = 680
+        let contentHeight: CGFloat = 740
         let screenVisible = NSScreen.main?.visibleFrame.height ?? 900
         let windowHeight = min(contentHeight, screenVisible - 60)
 
@@ -119,6 +119,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show CPU Usage", isOn: prefs.showCPU) { prefs.showCPU = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show Memory Usage", isOn: prefs.showMemory) { prefs.showMemory = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show CPU Temperature", isOn: prefs.showTemperature) { prefs.showTemperature = $0 }
+        _ = addToggle(to: contentView, y: &y, padding: padding, label: "Highlight Thermal Bursts", isOn: prefs.highlightThermalSpikes) { prefs.highlightThermalSpikes = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Color System Metrics", isOn: prefs.colorMetrics) { prefs.colorMetrics = $0 }
 
         y -= 4
@@ -177,6 +178,33 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
             interfaceDropdown.selectItem(at: 0)
         }
         contentView.addSubview(interfaceDropdown)
+        y -= 36
+
+        let tempLabel = label("CPU Temp Smoothing", size: 13, weight: .regular, color: NSColor(white: 0.85, alpha: 1.0))
+        tempLabel.frame = NSRect(x: padding, y: y - 18, width: 200, height: 16)
+        contentView.addSubview(tempLabel)
+
+        let tempDropdown = NSPopUpButton(frame: NSRect(x: w - padding - 160, y: y - 22, width: 160, height: 24))
+        tempDropdown.font = NSFont.systemFont(ofSize: 11)
+        let windows: [(String, Int)] = [
+            ("15s (Default)", 15),
+            ("10s Average", 10),
+            ("30s Average", 30),
+            ("Instant (1s)", 1)
+        ]
+        for (name, val) in windows {
+            let item = NSMenuItem(title: name, action: #selector(tempSmoothingChanged(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = val
+            tempDropdown.menu?.addItem(item)
+        }
+        let curWindow = prefs.temperatureAveragingWindow
+        if let idx = windows.firstIndex(where: { $0.1 == curWindow }) {
+            tempDropdown.selectItem(at: idx)
+        } else {
+            tempDropdown.selectItem(at: 0)
+        }
+        contentView.addSubview(tempDropdown)
         y -= 36
 
         // ── Country lookup providers ──
@@ -316,6 +344,11 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
     @objc private func interfaceChanged() {
         let selected = interfaceDropdown.selectedItem?.representedObject as? String
         Preferences.shared.lockedInterface = selected
+    }
+
+    @objc private func tempSmoothingChanged(_ sender: NSMenuItem) {
+        guard let val = sender.representedObject as? Int else { return }
+        Preferences.shared.temperatureAveragingWindow = val
     }
 
     // MARK: - Interface list (delegates to NetworkInterfaceReader)

@@ -7,6 +7,8 @@ struct SystemHistorySample {
     let memoryPercent: Double
     let totalMemoryGB: Double
     let temperature: Double?
+    let instantTemperature: Double?
+    let isThermalSpike: Bool
 }
 
 struct NetworkHistorySample {
@@ -25,7 +27,9 @@ final class MetricsHistory {
         system.append(SystemHistorySample(time: time, cpu: cpu.usagePercent,
             memoryGB: memory.usedGB, memoryPercent: memory.usedPercent,
             totalMemoryGB: memory.totalGB,
-            temperature: cpu.temperature > 0 ? cpu.temperature : nil))
+            temperature: cpu.temperature > 0 ? cpu.temperature : nil,
+            instantTemperature: cpu.instantTemperature > 0 ? cpu.instantTemperature : nil,
+            isThermalSpike: cpu.isThermalSpike))
         prune(at: time)
     }
 

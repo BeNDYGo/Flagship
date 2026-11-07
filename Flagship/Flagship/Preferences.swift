@@ -44,6 +44,18 @@ class Preferences {
         set { defaults.set(newValue, forKey: "showTemperature"); notify() }
     }
 
+    /// Rolling time window for CPU temperature smoothing in seconds (1 = Instantaneous, 10, 15 = default, 30).
+    var temperatureAveragingWindow: Int {
+        get { defaults.object(forKey: "temperatureAveragingWindow") as? Int ?? 15 }
+        set { defaults.set(newValue, forKey: "temperatureAveragingWindow"); notify() }
+    }
+
+    /// Whether to display a burst indicator (↑°C) when instant CPU temperature spikes significantly above rolling average.
+    var highlightThermalSpikes: Bool {
+        get { defaults.object(forKey: "highlightThermalSpikes") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "highlightThermalSpikes"); notify() }
+    }
+
     var showFlag: Bool {
         get { defaults.object(forKey: "showFlag") as? Bool ?? true }
         set { 

@@ -57,8 +57,24 @@ final class MetricsDashboardView: NSView {
              detail: "Total processor load", tint: cpuColor)
         card(ramRect, title: "MEMORY", value: latest.map { String(format: "%.1f GB", $0.memoryGB) } ?? "—",
              detail: latest.map { String(format: "%.0f%% of %.0f GB", $0.memoryPercent, $0.totalMemoryGB) } ?? "Waiting for sample", tint: ramColor)
+        let tempDetailText: String
+        let tempWindow = Preferences.shared.temperatureAveragingWindow
+        if let latest = latest, let avg = latest.temperature {
+            if tempWindow <= 1 {
+                tempDetailText = "Instant sensor mean"
+            } else if latest.isThermalSpike, let inst = latest.instantTemperature {
+                tempDetailText = String(format: "Now: %.0f°C (burst) • %ds", inst, tempWindow)
+            } else if let inst = latest.instantTemperature, abs(inst - avg) >= 3.0 {
+                tempDetailText = String(format: "Now: %.0f°C • %ds avg", inst, tempWindow)
+            } else {
+                tempDetailText = String(format: "Rolling %ds average", tempWindow)
+            }
+        } else {
+            tempDetailText = "Mean across CPU sensors"
+        }
+
         card(tempRect, title: "CPU TEMPERATURE", value: latest?.temperature.map { String(format: "%.0f °C", $0) } ?? "—",
-             detail: "Mean across CPU sensors", tint: tempColor)
+             detail: tempDetailText, tint: tempColor)
         card(netRect, title: "NETWORK", value: "", detail: "", tint: .systemBlue)
         label(net.map { "↓ " + NetworkMonitor.formatSpeed($0.download) } ?? "↓ —",
               rect: NSRect(x: netRect.minX + 12, y: netRect.minY + 29, width: 143, height: 20),
