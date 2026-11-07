@@ -36,8 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let dashboardItem = NSMenuItem()
         dashboardItem.view = dashboard
         menu.addItem(dashboardItem)
-        menu.addItem(NSMenuItem.separator())
-        
+
         let refreshItem = NSMenuItem(title: "Refresh IP", action: #selector(refreshIP), keyEquivalent: "r")
         menu.addItem(refreshItem)
         

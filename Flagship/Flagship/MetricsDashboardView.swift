@@ -7,7 +7,7 @@ final class MetricsDashboardView: NSView {
 
     init(history: MetricsHistory) {
         self.history = history
-        super.init(frame: NSRect(x: 0, y: 0, width: 364, height: 326))
+        super.init(frame: NSRect(x: 0, y: 0, width: 364, height: 306))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Live CPU, memory, temperature and network history for the last five minutes")
@@ -99,8 +99,6 @@ final class MetricsDashboardView: NSView {
              grid: true, maxGap: 15) { _ in .systemBlue }
         plot(network.map { ($0.time, Optional($0.upload)) }, in: plotRect(netRect), maxValue: netMax, now: now,
              grid: false, maxGap: 15) { _ in .systemPurple }
-        label("−5 min", rect: NSRect(x: 14, y: 305, width: 70, height: 14), size: 9)
-        label("now", rect: NSRect(x: 300, y: 305, width: 50, height: 14), size: 9, alignment: .right)
     }
 
     private func card(_ rect: NSRect, title: String, value: String, detail: String, tint: NSColor) {
