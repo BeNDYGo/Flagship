@@ -9,10 +9,16 @@ public struct CPUStats {
     public var systemPercent: Double = 0.0
     public var idlePercent: Double = 0.0
     public var coreCount: Int = 0
-    /// Mean across CPU sensors. 0 when no sensor is readable.
+    /// Time-averaged temperature over the rolling window (e.g. 15s). 0 when unavailable.
     public var temperature: Double = 0.0
-    /// Hottest CPU sensor — the reading thermal throttling acts on. 0 when no sensor is readable.
+    /// Instantaneous mean across CPU sensors for the current second. 0 when unavailable.
+    public var instantTemperature: Double = 0.0
+    /// Highest temperature observed in the recent rolling window.
+    public var peakTemperature: Double = 0.0
+    /// Hottest individual CPU sensor — the reading thermal throttling acts on. 0 when no sensor is readable.
     public var maxTemperature: Double = 0.0
+    /// True when the current instantaneous temperature represents a sudden thermal burst.
+    public var isThermalSpike: Bool = false
 }
 
 public struct MemoryStats {
@@ -55,6 +61,9 @@ public class StatsEngine {
 
     // Active temperature keys cached after startup scan
     private var tempSensors: [TempSensor] = []
+    
+    // Rolling history of recent instantaneous temperature samples for time-averaging
+    private var recentTemps: [(time: TimeInterval, temp: Double)] = []
 
     public init() {
         var pageSize: vm_size_t = 4096
@@ -236,9 +245,35 @@ public class StatsEngine {
                 }
             }
             if count > 0 {
-                stats.temperature = sum / Double(count)
+                let instant = sum / Double(count)
+                stats.instantTemperature = instant
+                stats.maxTemperature = hottest
+
+                let now = Date.timeIntervalSinceReferenceDate
+                let windowSec = Double(Preferences.shared.temperatureAveragingWindow)
+
+                if windowSec <= 1 {
+                    recentTemps = [(now, instant)]
+                    stats.temperature = instant
+                    stats.peakTemperature = instant
+                    stats.isThermalSpike = false
+                } else {
+                    recentTemps.append((now, instant))
+                    recentTemps.removeAll { $0.time < now - windowSec }
+                    if recentTemps.count > 120 {
+                        recentTemps.removeFirst(recentTemps.count - 120)
+                    }
+                    let sumRecent = recentTemps.reduce(0.0) { $0 + $1.temp }
+                    let avg = sumRecent / Double(recentTemps.count)
+                    stats.temperature = avg
+                    stats.peakTemperature = recentTemps.map(\.temp).max() ?? instant
+
+                    // A burst occurs when instantaneous temperature is hot (>= 78°C)
+                    // and significantly exceeds the rolling average, or reaches a critical peak (>= 92°C).
+                    let delta = instant - avg
+                    stats.isThermalSpike = (instant >= 78.0 && delta >= 7.0) || instant >= 92.0
+                }
             }
-            stats.maxTemperature = hottest
         }
         
         return stats

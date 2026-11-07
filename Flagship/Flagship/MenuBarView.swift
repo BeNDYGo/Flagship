@@ -13,6 +13,8 @@ class MenuBarView: NSView {
     private var cpuUsage: Double?
     private var memoryUsagePercent: Double?
     private var cpuTemperature: Double?
+    private var instantTemperature: Double?
+    private var isThermalSpike: Bool = false
 
     // Reserve room for full CPU load and installed memory from launch.
     private var metricsWidth: CGFloat {
@@ -24,7 +26,7 @@ class MenuBarView: NSView {
         return max(cpuWidth, memoryWidth)
     }
     private var temperatureWidth: CGFloat {
-        max(textWidth("100"), textWidth(temperatureText), textWidth("°C"))
+        max(textWidth("100"), textWidth(temperatureText), textWidth("°C"), textWidth("↑°C"))
     }
     private func textWidth(_ text: String) -> CGFloat {
         ceil(NSAttributedString(string: text, attributes: [.font: speedFont]).size().width)
@@ -94,6 +96,8 @@ class MenuBarView: NSView {
         cpuUsage = cpu.usagePercent
         memoryUsagePercent = memory.totalBytes > 0 ? memory.usedPercent : nil
         cpuTemperature = cpu.temperature > 0 ? cpu.temperature : nil
+        instantTemperature = cpu.instantTemperature > 0 ? cpu.instantTemperature : nil
+        isThermalSpike = cpu.isThermalSpike
         cpuText = String(format: "%.0f%%", min(100, max(0, cpu.usagePercent)))
         memoryText = String(format: "%.1f G", memory.usedGB)
         temperatureText = cpu.temperature > 0 ? String(format: "%.0f", cpu.temperature) : "—"
@@ -135,8 +139,13 @@ class MenuBarView: NSView {
             string.draw(at: NSPoint(x: rightEdge - string.size().width, y: y))
         }
         if prefs.showTemperature {
+            let showBurst = isThermalSpike && prefs.highlightThermalSpikes
+            let unitText = showBurst ? "↑°C" : "°C"
+            let unitColor = (showBurst && prefs.colorMetrics)
+                ? MetricColors.menuBarLevel(instantTemperature, warning: 70, high: 90, appearance: effectiveAppearance)
+                : temperatureColor
             drawMetric(temperatureText, rightEdge: currentRightEdge, y: 11.5, color: temperatureColor)
-            drawMetric("°C", rightEdge: currentRightEdge, y: 1.0, color: temperatureColor)
+            drawMetric(unitText, rightEdge: currentRightEdge, y: 1.0, color: unitColor)
             currentRightEdge -= temperatureWidth + 5.0
         }
         if prefs.showCPU || prefs.showMemory {
