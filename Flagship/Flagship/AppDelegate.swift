@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var settingsController: SettingsWindowController?
     var networkChangeDetector: NetworkChangeDetector!
     private let systemMonitor = SystemMonitor()
+    private let processMonitor = ProcessMonitor()
     private let history = MetricsHistory()
     private lazy var dashboard = MetricsDashboardView(history: history)
     private var monitorStarted = false
@@ -36,6 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let dashboardItem = NSMenuItem()
         dashboardItem.view = dashboard
         menu.addItem(dashboardItem)
+        menu.addItem(NSMenuItem.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh IP", action: #selector(refreshIP), keyEquivalent: "r")
         menu.addItem(refreshItem)
@@ -120,6 +122,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         systemMonitor.start()
         
+        processMonitor.onUpdate = { [weak self] snapshot in
+            self?.dashboard.updateTopProcesses(snapshot)
+        }
+        
         // Trigger an initial fetch
         ipFetcher.fetch()
         
@@ -167,10 +173,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         dashboard.isMenuOpen = true
         dashboard.needsDisplay = true
+        processMonitor.start()
     }
 
     func menuDidClose(_ menu: NSMenu) {
         dashboard.isMenuOpen = false
+        processMonitor.stop()
     }
 
     @objc func refreshIP() {
