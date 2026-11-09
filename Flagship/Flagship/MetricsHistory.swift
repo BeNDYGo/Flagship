@@ -4,8 +4,11 @@ struct SystemHistorySample {
     let time: TimeInterval
     let cpu: Double
     let memoryGB: Double
+    let ramUsedGB: Double
+    let ramPercent: Double
     let memoryPercent: Double
     let totalMemoryGB: Double
+    let swapUsedMB: Double?
     let temperature: Double?
     let instantTemperature: Double?
     let isThermalSpike: Bool
@@ -25,8 +28,12 @@ final class MetricsHistory {
 
     func append(cpu: CPUStats, memory: MemoryStats, at time: TimeInterval = Date.timeIntervalSinceReferenceDate) {
         system.append(SystemHistorySample(time: time, cpu: cpu.usagePercent,
-            memoryGB: memory.usedGB, memoryPercent: memory.usedPercent,
+            memoryGB: memory.usedGB,
+            ramUsedGB: memory.ramUsedGB,
+            ramPercent: memory.ramPercent,
+            memoryPercent: memory.usedPercent,
             totalMemoryGB: memory.totalGB,
+            swapUsedMB: memory.swapUsedMB,
             temperature: cpu.temperature > 0 ? cpu.temperature : nil,
             instantTemperature: cpu.instantTemperature > 0 ? cpu.instantTemperature : nil,
             isThermalSpike: cpu.isThermalSpike))

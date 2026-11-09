@@ -23,14 +23,22 @@ public struct CPUStats {
 
 public struct MemoryStats {
     public var usedBytes: UInt64 = 0
+    public var ramUsedBytes: UInt64 = 0
     public var totalBytes: UInt64 = 0
-    public var activeBytes: UInt64 = 0
+    public var appBytes: UInt64 = 0
     public var wiredBytes: UInt64 = 0
     public var compressedBytes: UInt64 = 0
     public var freeBytes: UInt64 = 0
+    public var cachedBytes: UInt64 = 0
+    public var swapUsedBytes: UInt64 = 0
+    public var swapTotalBytes: UInt64 = 0
 
     public var usedGB: Double {
         return Double(usedBytes) / 1_073_741_824.0
+    }
+
+    public var ramUsedGB: Double {
+        return Double(ramUsedBytes) / 1_073_741_824.0
     }
     
     public var totalGB: Double {
@@ -39,6 +47,18 @@ public struct MemoryStats {
     
     public var usedPercent: Double {
         return totalBytes > 0 ? (Double(usedBytes) / Double(totalBytes)) * 100.0 : 0.0
+    }
+
+    public var ramPercent: Double {
+        return totalBytes > 0 ? (Double(ramUsedBytes) / Double(totalBytes)) * 100.0 : 0.0
+    }
+
+    public var swapUsedMB: Double {
+        return Double(swapUsedBytes) / 1_048_576.0
+    }
+
+    public var swapUsedGB: Double {
+        return Double(swapUsedBytes) / 1_073_741_824.0
     }
 }
 
@@ -298,16 +318,38 @@ public class StatsEngine {
         }
         
         let page = cachedPageSize
-        let active = UInt64(stats64.active_count) * page
+        
+        // Real RAM costs matching Activity Monitor (App Memory + Purgeable + Wired + Compressed)
+        // stats64.internal_page_count represents all anonymous memory allocated by apps (including purgeable)
+        let internalBytes = UInt64(stats64.internal_page_count) * page
         let wired = UInt64(stats64.wire_count) * page
         let compressed = UInt64(stats64.compressor_page_count) * page
         let free = UInt64(stats64.free_count) * page
-        
-        stats.activeBytes = active
+        let cached = UInt64(stats64.external_page_count) * page
+
+        let appPages = stats64.internal_page_count >= stats64.purgeable_count ?
+            UInt64(stats64.internal_page_count - stats64.purgeable_count) : 0
+        stats.appBytes = appPages * page
         stats.wiredBytes = wired
         stats.compressedBytes = compressed
         stats.freeBytes = free
-        stats.usedBytes = active + wired + compressed
+        stats.cachedBytes = cached
+        
+        // Real RAM costs (11.57 GB on screenshot):
+        let ramUsed = internalBytes + wired + compressed
+        stats.ramUsedBytes = ramUsed
+
+        // Query Swap via sysctl vm.swapusage
+        var mib: [Int32] = [CTL_VM, VM_SWAPUSAGE]
+        var swapUsage = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        if sysctl(&mib, 2, &swapUsage, &size, nil, 0) == 0 {
+            stats.swapUsedBytes = swapUsage.xsu_used
+            stats.swapTotalBytes = swapUsage.xsu_total
+        }
+
+        // Total memory expenditure: Real RAM (11.57 GB) + Swap
+        stats.usedBytes = ramUsed + stats.swapUsedBytes
         
         return stats
     }

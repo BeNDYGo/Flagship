@@ -50,13 +50,30 @@ final class MetricsDashboardView: NSView {
         let tempRect = NSRect(x: 10, y: 170, width: 167, height: 126)
         let netRect = NSRect(x: 187, y: 170, width: 167, height: 126)
         let cpuColor = color(latest?.cpu ?? 0, warning: 50, high: 80)
-        let ramColor = color(latest?.memoryPercent ?? 0, warning: 70, high: 90)
+        let ramColor = MetricColors.memoryLevel(ramPercent: latest?.ramPercent,
+                                                swapMB: latest?.swapUsedMB,
+                                                totalUsedPercent: latest?.memoryPercent)
         let tempColor = color(latest?.temperature ?? 0, warning: 70, high: 90)
 
         card(cpuRect, title: "CPU", value: latest.map { String(format: "%.0f%%", $0.cpu) } ?? "—",
              detail: "Total processor load", tint: cpuColor)
-        card(ramRect, title: "MEMORY", value: latest.map { String(format: "%.1f GB", $0.memoryGB) } ?? "—",
-             detail: latest.map { String(format: "%.0f%% of %.0f GB", $0.memoryPercent, $0.totalMemoryGB) } ?? "Waiting for sample", tint: ramColor)
+        let ramGB = latest?.ramUsedGB ?? (latest?.memoryGB ?? 0)
+        let swapMB = latest?.swapUsedMB ?? 0
+        let totalUsedGB = latest?.memoryGB ?? ramGB
+
+        let ramDetailText: String
+        if latest != nil {
+            if swapMB >= 1024.0 {
+                ramDetailText = String(format: "%.1f GB RAM | %.1f GB Swap", ramGB, swapMB / 1024.0)
+            } else {
+                ramDetailText = String(format: "%.1f GB RAM | %.0f MB Swap", ramGB, swapMB)
+            }
+        } else {
+            ramDetailText = "Waiting for sample"
+        }
+
+        card(ramRect, title: "MEMORY", value: latest.map { _ in String(format: "%.1f GB", totalUsedGB) } ?? "—",
+             detail: ramDetailText, tint: ramColor)
         let tempDetailText: String
         let tempWindow = Preferences.shared.temperatureAveragingWindow
         if let latest = latest, let avg = latest.temperature {
@@ -86,10 +103,11 @@ final class MetricsDashboardView: NSView {
         plot(system.map { ($0.time, Optional($0.cpu)) }, in: plotRect(cpuRect), maxValue: 100, now: now) {
             self.color($0, warning: 50, high: 80)
         }
+        let currentSwapMB = system.last?.swapUsedMB
         plot(system.map { ($0.time, Optional($0.memoryGB)) }, in: plotRect(ramRect),
              maxValue: system.last?.totalMemoryGB ?? 1, now: now) {
             let percent = $0 / max(system.last?.totalMemoryGB ?? 1, 1) * 100
-            return self.color(percent, warning: 70, high: 90)
+            return MetricColors.memoryLevel(ramPercent: percent, swapMB: currentSwapMB)
         }
         plot(system.map { ($0.time, $0.temperature) }, in: plotRect(tempRect), maxValue: 110, now: now) {
             self.color($0, warning: 70, high: 90)
