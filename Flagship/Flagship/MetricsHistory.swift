@@ -9,6 +9,7 @@ struct SystemHistorySample {
     let temperature: Double?
     let instantTemperature: Double?
     let isThermalSpike: Bool
+    let powerMW: Double?
 }
 
 struct NetworkHistorySample {
@@ -23,13 +24,14 @@ final class MetricsHistory {
     private(set) var system: [SystemHistorySample] = []
     private(set) var network: [NetworkHistorySample] = []
 
-    func append(cpu: CPUStats, memory: MemoryStats, at time: TimeInterval = Date.timeIntervalSinceReferenceDate) {
+    func append(cpu: CPUStats, memory: MemoryStats, powerMW: Double? = nil, at time: TimeInterval = Date.timeIntervalSinceReferenceDate) {
         system.append(SystemHistorySample(time: time, cpu: cpu.usagePercent,
             memoryGB: memory.usedGB, memoryPercent: memory.usedPercent,
             totalMemoryGB: memory.totalGB,
             temperature: cpu.temperature > 0 ? cpu.temperature : nil,
             instantTemperature: cpu.instantTemperature > 0 ? cpu.instantTemperature : nil,
-            isThermalSpike: cpu.isThermalSpike))
+            isThermalSpike: cpu.isThermalSpike,
+            powerMW: powerMW))
         prune(at: time)
     }
 

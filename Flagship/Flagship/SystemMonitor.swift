@@ -2,7 +2,7 @@ import Foundation
 
 /// Owns all SMC and Mach sampling on one serial background queue.
 final class SystemMonitor {
-    var onUpdate: ((CPUStats, MemoryStats) -> Void)?
+    var onUpdate: ((CPUStats, MemoryStats, Double?) -> Void)?
     private let queue = DispatchQueue(label: "flagship.system", qos: .utility)
     private var timer: DispatchSourceTimer?
     private lazy var engine = StatsEngine()
@@ -15,8 +15,9 @@ final class SystemMonitor {
             guard let self = self else { return }
             let cpu = self.engine.fetchCPUStats()
             let memory = self.engine.fetchMemoryStats()
+            let powerMW = self.engine.fetchSystemPowerMW()
             DispatchQueue.main.async { [weak self] in
-                self?.onUpdate?(cpu, memory)
+                self?.onUpdate?(cpu, memory, powerMW)
             }
         }
         self.timer = timer

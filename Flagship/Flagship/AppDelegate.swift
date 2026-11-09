@@ -94,10 +94,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Start monitoring immediately
         startNetworkMonitor()
 
-        systemMonitor.onUpdate = { [weak self] cpu, memory in
+        systemMonitor.onUpdate = { [weak self] cpu, memory, powerMW in
             guard let self = self else { return }
             self.menuBarView.updateSystem(cpu: cpu, memory: memory)
-            self.history.append(cpu: cpu, memory: memory)
+            self.history.append(cpu: cpu, memory: memory, powerMW: powerMW)
             self.dashboard.refresh()
             let temperature: String
             if cpu.temperature > 0 {

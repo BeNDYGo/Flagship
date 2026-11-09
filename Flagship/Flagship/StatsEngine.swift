@@ -312,4 +312,52 @@ public class StatsEngine {
         return stats
     }
 
+    // MARK: - System Power Sampling (mW)
+    public func fetchSystemPowerMW() -> Double? {
+        // 1. Query AppleSmartBattery telemetry (Apple Silicon & Intel MacBooks)
+        let matching: CFMutableDictionary = IOServiceMatching("AppleSmartBattery")
+        let service = IOServiceGetMatchingService(0, matching)
+        if service != 0 {
+            defer { IOObjectRelease(service) }
+            var props: Unmanaged<CFMutableDictionary>?
+            if IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+               let dict = props?.takeRetainedValue() as? [String: Any] {
+                // Priority 1: SystemLoad from PowerTelemetryData (instant total system draw in mW)
+                if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
+                   let systemLoad = telemetry["SystemLoad"] as? NSNumber,
+                   systemLoad.doubleValue > 0 && systemLoad.doubleValue < 250_000 {
+                    return systemLoad.doubleValue
+                }
+                // Priority 2: Voltage (mV) * abs(InstantAmperage (mA)) / 1000 = mW
+                if let voltage = dict["Voltage"] as? NSNumber {
+                    let v = voltage.doubleValue
+                    if let instAmp = dict["InstantAmperage"] as? NSNumber {
+                        var a = instAmp.int64Value
+                        // If signed 64-bit overflowed to unsigned representation
+                        if a > 0x7FFFFFFFFFFF {
+                            a -= Int64(bitPattern: 0xFFFFFFFFFFFFFFFF)
+                        }
+                        let absAmp = abs(Double(a))
+                        if absAmp > 0 && v > 0 {
+                            let mw = (v * absAmp) / 1000.0
+                            if mw > 0 && mw < 250_000 {
+                                return mw
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Query SMC power sensors (Watts -> mW) for desktop Macs or Intel machines
+        let smc = SMC.shared
+        for key in ["PSTR", "PDTR", "PCPC", "PCPT"] {
+            if let watts = smc.getValue(key), watts > 0 && watts < 400.0 {
+                return watts * 1000.0
+            }
+        }
+
+        return nil
+    }
+
 }

@@ -14,7 +14,7 @@ final class MetricsDashboardView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 364, height: 448))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Live CPU, memory, temperature, network history and top active processes")
+        setAccessibilityLabel("Live CPU, memory, temperature, energy consumption history and top active processes")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -26,6 +26,15 @@ final class MetricsDashboardView: NSView {
 
     func refresh() {
         if isMenuOpen { needsDisplay = true }
+    }
+
+    private func formatMilliwatts(_ mw: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = " "
+        formatter.maximumFractionDigits = 0
+        let valStr = formatter.string(from: NSNumber(value: mw)) ?? String(format: "%.0f", mw)
+        return "\(valStr) mW"
     }
 
     private func label(_ text: String, rect: NSRect, size: CGFloat = 10,
@@ -47,9 +56,7 @@ final class MetricsDashboardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let now = Date.timeIntervalSinceReferenceDate
         let system = history.system.filter { $0.time >= now - history.duration }
-        let network = history.network.filter { $0.time >= now - history.duration }
         let latest = system.last.flatMap { now - $0.time < 10 ? $0 : nil }
-        let net = network.last.flatMap { now - $0.time < 15 ? $0 : nil }
         label("LIVE ACTIVITY", rect: NSRect(x: 14, y: 10, width: 200, height: 16),
               size: 10, weight: .semibold, color: .labelColor)
         label("5 MIN", rect: NSRect(x: 290, y: 10, width: 60, height: 16), alignment: .right)
@@ -57,7 +64,7 @@ final class MetricsDashboardView: NSView {
         let cpuRect = NSRect(x: 10, y: 34, width: 167, height: 126)
         let ramRect = NSRect(x: 187, y: 34, width: 167, height: 126)
         let tempRect = NSRect(x: 10, y: 170, width: 167, height: 126)
-        let netRect = NSRect(x: 187, y: 170, width: 167, height: 126)
+        let energyRect = NSRect(x: 187, y: 170, width: 167, height: 126)
         let cpuColor = color(latest?.cpu ?? 0, warning: 50, high: 80)
         let ramColor = color(latest?.memoryPercent ?? 0, warning: 70, high: 90)
         let tempColor = color(latest?.temperature ?? 0, warning: 70, high: 90)
@@ -84,13 +91,34 @@ final class MetricsDashboardView: NSView {
 
         card(tempRect, title: "CPU TEMPERATURE", value: latest?.temperature.map { String(format: "%.0f °C", $0) } ?? "—",
              detail: tempDetailText, tint: tempColor)
-        card(netRect, title: "NETWORK", value: "", detail: "", tint: .systemBlue)
-        label(net.map { "↓ " + NetworkMonitor.formatSpeed($0.download) } ?? "↓ —",
-              rect: NSRect(x: netRect.minX + 12, y: netRect.minY + 29, width: 143, height: 20),
-              size: 13, weight: .medium, color: .systemBlue)
-        label(net.map { "↑ " + NetworkMonitor.formatSpeed($0.upload) } ?? "↑ —",
-              rect: NSRect(x: netRect.minX + 12, y: netRect.minY + 51, width: 143, height: 16),
-              size: 10, color: .systemPurple)
+
+        // Energy / Power Consumption Card (mW)
+        let energyColor: NSColor
+        let energyValueText: String
+        let energyDetailText: String
+
+        if let mw = latest?.powerMW {
+            if mw >= 25_000 {
+                energyColor = .systemRed
+            } else if mw >= 12_000 {
+                energyColor = .systemOrange
+            } else {
+                energyColor = .systemTeal
+            }
+            energyValueText = formatMilliwatts(mw)
+            if mw >= 1000.0 {
+                energyDetailText = String(format: "%.2f W total system draw", mw / 1000.0)
+            } else {
+                energyDetailText = "Low idle power"
+            }
+        } else {
+            energyColor = .systemTeal
+            energyValueText = "—"
+            energyDetailText = "Waiting for sensor sample"
+        }
+
+        card(energyRect, title: "ENERGY", value: energyValueText,
+             detail: energyDetailText, tint: energyColor)
 
         plot(system.map { ($0.time, Optional($0.cpu)) }, in: plotRect(cpuRect), maxValue: 100, now: now) {
             self.color($0, warning: 50, high: 80)
@@ -103,11 +131,17 @@ final class MetricsDashboardView: NSView {
         plot(system.map { ($0.time, $0.temperature) }, in: plotRect(tempRect), maxValue: 110, now: now) {
             self.color($0, warning: 70, high: 90)
         }
-        let netMax = max(1000, network.map { max($0.upload, $0.download) }.max() ?? 0) * 1.1
-        plot(network.map { ($0.time, Optional($0.download)) }, in: plotRect(netRect), maxValue: netMax, now: now,
-             grid: true, maxGap: 15) { _ in .systemBlue }
-        plot(network.map { ($0.time, Optional($0.upload)) }, in: plotRect(netRect), maxValue: netMax, now: now,
-             grid: false, maxGap: 15) { _ in .systemPurple }
+
+        // Plot Energy consumption (mW)
+        let energyPoints = system.map { ($0.time, $0.powerMW) }
+        let maxObservedPower = energyPoints.compactMap { $0.1 }.max() ?? 10_000
+        let energyMax = max(8_000.0, maxObservedPower * 1.15)
+        plot(energyPoints, in: plotRect(energyRect), maxValue: energyMax, now: now,
+             grid: true, maxGap: 15) { val in
+            if val >= 25_000 { return .systemRed }
+            if val >= 12_000 { return .systemOrange }
+            return .systemTeal
+        }
 
         // ==========================================
         // TOP PROCESSES SECTION
