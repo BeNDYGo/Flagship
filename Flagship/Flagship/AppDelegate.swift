@@ -111,10 +111,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } else {
                 temperature = "CPU temperature: unavailable"
             }
+            let swapSummary: String
+            if memory.swapUsedBytes >= 1_073_741_824 {
+                swapSummary = String(format: " (%.1f GB RAM | %.1f GB Swap)", memory.ramUsedGB, memory.swapUsedGB)
+            } else {
+                swapSummary = String(format: " (%.1f GB RAM | %.0f MB Swap)", memory.ramUsedGB, memory.swapUsedMB)
+            }
             let accessibilitySummary = [
                 self.currentIP.isEmpty ? "" : "IP: \(self.currentIP)",
                 String(format: "CPU: %.0f%%", cpu.usagePercent),
-                String(format: "Memory: %.1f / %.1f GB", memory.usedGB, memory.totalGB),
+                String(format: "Memory: %.1f / %.1f GB%@", memory.usedGB, memory.totalGB, swapSummary),
                 temperature
             ].filter { !$0.isEmpty }.joined(separator: "\n")
             self.menuBarView.setAccessibilityLabel(accessibilitySummary)
@@ -136,9 +142,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     
     @objc func preferencesChanged() {
         startNetworkMonitor() // Restart timer if interval changed
-        menuBarView.resetCachedWidth() // Recalculate width for new display settings
+        menuBarView.applyPreferences()
         updateMenuBarWidth()
-        menuBarView.needsDisplay = true
 
         // If the Settings window is not currently on screen, drop the cached
         // controller so the next openSettings() rebuilds it from the (possibly

@@ -12,9 +12,12 @@ class MenuBarView: NSView {
     private var temperatureText = "—"
     private var cpuUsage: Double?
     private var memoryUsagePercent: Double?
+    private var memoryRamPercent: Double?
+    private var memorySwapMB: Double?
     private var cpuTemperature: Double?
     private var instantTemperature: Double?
     private var isThermalSpike: Bool = false
+    private var lastMemory: MemoryStats?
 
     // Reserve room for full CPU load and installed memory from launch.
     private var metricsWidth: CGFloat {
@@ -93,14 +96,29 @@ class MenuBarView: NSView {
     }
 
     func updateSystem(cpu: CPUStats, memory: MemoryStats) {
+        lastMemory = memory
         cpuUsage = cpu.usagePercent
         memoryUsagePercent = memory.totalBytes > 0 ? memory.usedPercent : nil
+        memoryRamPercent = memory.totalBytes > 0 ? memory.ramPercent : nil
+        memorySwapMB = memory.swapUsedBytes > 0 ? memory.swapUsedMB : nil
         cpuTemperature = cpu.temperature > 0 ? cpu.temperature : nil
         instantTemperature = cpu.instantTemperature > 0 ? cpu.instantTemperature : nil
         isThermalSpike = cpu.isThermalSpike
         cpuText = String(format: "%.0f%%", min(100, max(0, cpu.usagePercent)))
-        memoryText = String(format: "%.1f G", memory.usedGB)
+        formatMemoryText()
         temperatureText = cpu.temperature > 0 ? String(format: "%.0f", cpu.temperature) : "—"
+        needsDisplay = true
+    }
+
+    private func formatMemoryText() {
+        guard let memory = lastMemory else { return }
+        let memGB = Preferences.shared.addSwapToMenuBarMemory ? memory.usedGB : memory.ramUsedGB
+        memoryText = String(format: "%.1f G", memGB)
+    }
+
+    func applyPreferences() {
+        formatMemoryText()
+        resetCachedWidth()
         needsDisplay = true
     }
 
@@ -111,6 +129,7 @@ class MenuBarView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        formatMemoryText()
         let prefs = Preferences.shared
         
         let textColor = NSColor.labelColor
@@ -132,7 +151,12 @@ class MenuBarView: NSView {
 
         // Same font and baselines as the two speed lines.
         let cpuColor = prefs.colorMetrics ? MetricColors.menuBarLevel(cpuUsage, warning: 50, high: 80, appearance: effectiveAppearance) : textColor
-        let memoryColor = prefs.colorMetrics ? MetricColors.menuBarLevel(memoryUsagePercent, warning: 70, high: 90, appearance: effectiveAppearance) : textColor
+        let memoryColor = prefs.colorMetrics ? MetricColors.menuBarMemoryLevel(
+            ramPercent: memoryRamPercent,
+            swapMB: memorySwapMB,
+            totalUsedPercent: memoryUsagePercent,
+            appearance: effectiveAppearance
+        ) : textColor
         let temperatureColor = prefs.colorMetrics ? MetricColors.menuBarLevel(cpuTemperature, warning: 70, high: 90, appearance: effectiveAppearance) : textColor
         func drawMetric(_ text: String, rightEdge: CGFloat, y: CGFloat, color: NSColor) {
             let string = NSAttributedString(string: text, attributes: [.font: speedFont, .foregroundColor: color])

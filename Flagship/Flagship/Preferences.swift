@@ -39,6 +39,12 @@ class Preferences {
         set { defaults.set(newValue, forKey: "showMemory"); notify() }
     }
 
+    /// Whether to add Swap to RAM usage in the status bar menu bar text.
+    var addSwapToMenuBarMemory: Bool {
+        get { defaults.object(forKey: "addSwapToMenuBarMemory") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "addSwapToMenuBarMemory"); notify() }
+    }
+
     var showTemperature: Bool {
         get { defaults.object(forKey: "showTemperature") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "showTemperature"); notify() }

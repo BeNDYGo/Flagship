@@ -32,7 +32,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     convenience init() {
         let windowWidth: CGFloat = 380
-        let contentHeight: CGFloat = 740
+        let contentHeight: CGFloat = 770
         let screenVisible = NSScreen.main?.visibleFrame.height ?? 900
         let windowHeight = min(contentHeight, screenVisible - 60)
 
@@ -118,6 +118,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         ipToggle = addToggle(to: contentView, y: &y, padding: padding, label: "Show IP Instead of Flag", isOn: prefs.showIPInsteadOfFlag) { prefs.showIPInsteadOfFlag = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show CPU Usage", isOn: prefs.showCPU) { prefs.showCPU = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show Memory Usage", isOn: prefs.showMemory) { prefs.showMemory = $0 }
+        _ = addToggle(to: contentView, y: &y, padding: padding, label: "Add Swap to Menu Bar Memory", isOn: prefs.addSwapToMenuBarMemory) { prefs.addSwapToMenuBarMemory = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show CPU Temperature", isOn: prefs.showTemperature) { prefs.showTemperature = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Highlight Thermal Bursts", isOn: prefs.highlightThermalSpikes) { prefs.highlightThermalSpikes = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Color System Metrics", isOn: prefs.colorMetrics) { prefs.colorMetrics = $0 }
@@ -294,7 +295,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     private func addToggle(to parent: NSView, y: inout CGFloat, padding: CGFloat, label text: String, isOn: Bool, onChange: @escaping (Bool) -> Void) -> NativeToggle {
         let l = label(text, size: 13, weight: .regular, color: NSColor(white: 0.88, alpha: 1.0))
-        l.frame = NSRect(x: padding + 28, y: y - 18, width: 200, height: 16)
+        l.frame = NSRect(x: padding + 28, y: y - 18, width: parent.bounds.width - padding * 2 - 76, height: 16)
         parent.addSubview(l)
 
         let toggle = NativeToggle(frame: NSRect(x: parent.bounds.width - padding - 44, y: y - 20, width: 40, height: 22))
