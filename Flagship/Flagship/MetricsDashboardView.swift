@@ -140,7 +140,20 @@ final class MetricsDashboardView: NSView {
         divider.stroke()
 
         // Section Title
-        label("TOP PROCESSES", rect: NSRect(x: 14, y: 316, width: 140, height: 16),
+        let sectionTitle: String
+        if selectedCategory == .energy {
+            let win = Preferences.shared.energyAveragingWindow
+            if win >= 3600 {
+                let hours = win / 3600
+                sectionTitle = "TOP PROCESSES (\(hours)H ENERGY)"
+            } else {
+                let mins = win / 60
+                sectionTitle = "TOP PROCESSES (\(mins)M ENERGY)"
+            }
+        } else {
+            sectionTitle = "TOP PROCESSES"
+        }
+        label(sectionTitle, rect: NSRect(x: 14, y: 316, width: 164, height: 16),
               size: 10, weight: .semibold, color: .labelColor)
 
         // Segmented Pill Control (CPU / RAM / Energy)

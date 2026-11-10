@@ -53,7 +53,23 @@ final class ProcessMonitor {
 
     private var timebase = mach_timebase_info_data_t()
     private var prevCpuSamples = [pid_t: (totalTicks: UInt64, time: TimeInterval)]()
-    private var prevEnergySamples = [pid_t: (energyNj: UInt64, time: TimeInterval)]()
+    private var prevEnergyByPid = [pid_t: UInt64]()
+
+    private struct MinuteBucket {
+        var minuteIndex: Int64
+        var joulesByApp: [String: Double]
+    }
+    private var energyBuckets: [MinuteBucket] = []
+
+    private struct TrackedAppMeta {
+        let name: String
+        let appPath: String?
+        let primaryPid: pid_t
+    }
+    private var trackedAppsMeta = [String: TrackedAppMeta]()
+
+    private var isMenuOpen = false
+    private var backgroundTimer: DispatchSourceTimer?
 
     private struct ResolvedMeta {
         let mainKey: String
@@ -69,44 +85,94 @@ final class ProcessMonitor {
 
     func start() {
         queue.async { [weak self] in
-            guard let self = self, self.timer == nil else { return }
-
-            // 1. Baseline sample at t = 0 to establish tick reference
+            guard let self = self else { return }
             _ = self.sampleRawCandidates()
+            self.scheduleBackgroundTimer()
+        }
+    }
 
-            // 2. Fast warm-up at 350ms: calculates instantaneous rate so the UI shows data immediately
+    func menuWillOpen() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.isMenuOpen = true
+            self.stopBackgroundTimer()
+
+            // 1. Immediately emit current snapshot from accumulated background history
+            self.publishSample()
+
+            // 2. Fast warm-up at 350ms to establish fresh CPU rate
+            self.warmUpTimer?.cancel()
             let warmUp = DispatchSource.makeTimerSource(queue: self.queue)
             warmUp.schedule(deadline: .now() + .milliseconds(350))
             warmUp.setEventHandler { [weak self] in
-                guard let self = self else { return }
+                guard let self = self, self.isMenuOpen else { return }
                 self.publishSample()
                 self.warmUpTimer = nil
             }
             self.warmUpTimer = warmUp
             warmUp.resume()
 
-            // 3. Repeating timer at 1.0s in lockstep with SystemMonitor
-            let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
-            timer.setEventHandler { [weak self] in
-                self?.publishSample()
-            }
-            self.timer = timer
-            timer.resume()
+            // 3. Repeating 1.0s foreground timer in sync with UI
+            self.startForegroundTimer()
+        }
+    }
+
+    func menuDidClose() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.isMenuOpen = false
+            self.stopForegroundTimer()
+            self.warmUpTimer?.cancel()
+            self.warmUpTimer = nil
+            self.scheduleBackgroundTimer()
         }
     }
 
     func stop() {
         queue.async { [weak self] in
             guard let self = self else { return }
+            self.isMenuOpen = false
+            self.stopForegroundTimer()
+            self.stopBackgroundTimer()
             self.warmUpTimer?.cancel()
             self.warmUpTimer = nil
-            self.timer?.cancel()
-            self.timer = nil
-            // Clear tick history to prevent stale multi-minute averages on next open
             self.prevCpuSamples.removeAll(keepingCapacity: true)
-            self.prevEnergySamples.removeAll(keepingCapacity: true)
+            self.prevEnergyByPid.removeAll(keepingCapacity: true)
         }
+    }
+
+    private func startForegroundTimer() {
+        stopForegroundTimer()
+        let timer = DispatchSource.makeTimerSource(queue: self.queue)
+        timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            self?.publishSample()
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    private func stopForegroundTimer() {
+        timer?.cancel()
+        timer = nil
+    }
+
+    private func scheduleBackgroundTimer() {
+        stopBackgroundTimer()
+        let timer = DispatchSource.makeTimerSource(queue: self.queue)
+        // Background sample every 15 seconds with 1000ms leeway for battery efficiency
+        timer.schedule(deadline: .now() + .seconds(15), repeating: .seconds(15), leeway: .milliseconds(1000))
+        timer.setEventHandler { [weak self] in
+            guard let self = self, !self.isMenuOpen else { return }
+            _ = self.sampleRawCandidates()
+        }
+        self.backgroundTimer = timer
+        timer.resume()
+    }
+
+    private func stopBackgroundTimer() {
+        backgroundTimer?.cancel()
+        backgroundTimer = nil
     }
 
     private func publishSample() {
@@ -175,41 +241,57 @@ final class ProcessMonitor {
                 memoryBytes = taskInfo.ptinfo.pti_resident_size
             }
 
-            // 3. Energy: Watts on Apple Silicon (normalized to score * 12.5) or fallback Activity Monitor score
-            var powerWatts = 0.0
-            var energyScore = 0.0
+            // 3. Energy: Track per-app deltas in time buckets
             var hasEnergyNj = false
+            var deltaJoules = 0.0
+
+            let meta = resolveMeta(for: pid)
+            trackedAppsMeta[meta.mainKey] = TrackedAppMeta(name: meta.displayName, appPath: meta.appPath, primaryPid: pid)
 
             if rusageRes == 0 && rusage.ri_energy_nj > 0 {
                 hasEnergyNj = true
-                if let prevEnergy = prevEnergySamples[pid] {
-                    let deltaSec = now - prevEnergy.time
-                    if deltaSec > 0 && deltaSec < 2.5 && rusage.ri_energy_nj >= prevEnergy.energyNj {
-                        let deltaJoules = Double(rusage.ri_energy_nj - prevEnergy.energyNj) / 1_000_000_000.0
-                        powerWatts = deltaJoules / deltaSec
+                let currentEnergy = rusage.ri_energy_nj
+                if let prev = prevEnergyByPid[pid] {
+                    if currentEnergy >= prev {
+                        deltaJoules = Double(currentEnergy - prev) / 1_000_000_000.0
                     }
                 }
-                prevEnergySamples[pid] = (rusage.ri_energy_nj, now)
-                energyScore = powerWatts * 12.5
+                prevEnergyByPid[pid] = currentEnergy
             } else {
-                let deltaSec = now - (prevCpuSamples[pid]?.time ?? now)
+                // Intel fallback: estimate proportional energy from CPU ticks and wakeups
                 let wakeups = Double(rusage.ri_pkg_idle_wkups + rusage.ri_interrupt_wkups)
-                let wakeupsPerSec = (deltaSec > 0 && deltaSec < 2.5) ? (wakeups / deltaSec) : 0.0
-                energyScore = normalizedCpuPercent * 2.0 + min(20.0, wakeupsPerSec * 0.05)
+                if let prev = prevCpuSamples[pid], totalTicks >= prev.totalTicks {
+                    let deltaTicks = totalTicks - prev.totalTicks
+                    let deltaNs = Double(deltaTicks) * Double(timebase.numer) / Double(max(1, timebase.denom))
+                    deltaJoules = (deltaNs / 1_000_000_000.0) * 15.0 + (wakeups * 0.001)
+                }
+            }
+
+            if deltaJoules > 0.0 {
+                let minuteIndex = Int64(now / 60.0)
+                if let lastIdx = energyBuckets.indices.last, energyBuckets[lastIdx].minuteIndex == minuteIndex {
+                    energyBuckets[lastIdx].joulesByApp[meta.mainKey, default: 0.0] += deltaJoules
+                } else {
+                    energyBuckets.append(MinuteBucket(minuteIndex: minuteIndex, joulesByApp: [meta.mainKey: deltaJoules]))
+                }
             }
 
             candidates.append(RawCandidate(
                 pid: pid,
                 normalizedCpuPercent: normalizedCpuPercent,
                 memoryBytes: memoryBytes,
-                powerWatts: powerWatts,
-                energyScore: energyScore,
+                powerWatts: 0.0,
+                energyScore: deltaJoules,
                 hasEnergyNj: hasEnergyNj
             ))
         }
 
         prevCpuSamples = prevCpuSamples.filter { activePids.contains($0.key) }
-        prevEnergySamples = prevEnergySamples.filter { activePids.contains($0.key) }
+        prevEnergyByPid = prevEnergyByPid.filter { activePids.contains($0.key) }
+
+        let minuteIndex = Int64(now / 60.0)
+        let cutoffMinute = minuteIndex - 660 // 11 hours retention
+        energyBuckets.removeAll { $0.minuteIndex < cutoffMinute }
 
         return candidates
     }
@@ -272,7 +354,14 @@ final class ProcessMonitor {
             .map { item -> ProcessDisplayItem in
                 let fraction = min(1.0, max(0.01, item.normalizedCpuPercent / 100.0))
                 let text = String(format: "%.1f%%", item.normalizedCpuPercent)
-                let name = item.helperCount > 1 ? "\(item.name) (\(item.helperCount))" : item.name
+                let name: String
+                if item.appPath == "system:macos" || item.name == "macOS System" {
+                    name = "macOS System"
+                } else if item.helperCount > 1 {
+                    name = "\(item.name) (\(item.helperCount))"
+                } else {
+                    name = item.name
+                }
                 let icon = self.cachedIcon(for: item.appPath)
                 return ProcessDisplayItem(
                     pid: item.primaryPid,
@@ -302,7 +391,14 @@ final class ProcessMonitor {
                     let mb = Double(item.memoryBytes) / 1_048_576.0
                     text = String(format: "%.0f MB", max(1.0, mb))
                 }
-                let name = item.helperCount > 1 ? "\(item.name) (\(item.helperCount))" : item.name
+                let name: String
+                if item.appPath == "system:macos" || item.name == "macOS System" {
+                    name = "macOS System"
+                } else if item.helperCount > 1 {
+                    name = "\(item.name) (\(item.helperCount))"
+                } else {
+                    name = item.name
+                }
                 let icon = self.cachedIcon(for: item.appPath)
                 return ProcessDisplayItem(
                     pid: item.primaryPid,
@@ -318,39 +414,92 @@ final class ProcessMonitor {
                 )
             }
 
-        // Top 5 Energy (sorted uniformly by normalized energyScore)
-        let topEnergy = allAggregated
-            .sorted { $0.energyScore > $1.energyScore }
-            .prefix(5)
-            .map { item -> ProcessDisplayItem in
-                let fraction: Double
+        // Top 5 Energy: accumulated share (% of total energy) over the selected window (30m ... 10h)
+        let windowSeconds = Preferences.shared.energyAveragingWindow
+        let windowMinutes = max(1, Int64(ceil(Double(windowSeconds) / 60.0)))
+        let currentMinute = Int64(Date.timeIntervalSinceReferenceDate / 60.0)
+        let startMinute = currentMinute - windowMinutes
+
+        var appJoulesMap: [String: Double] = [:]
+        var totalWindowJoules: Double = 0.0
+
+        for bucket in energyBuckets where bucket.minuteIndex >= startMinute {
+            for (appKey, joules) in bucket.joulesByApp {
+                appJoulesMap[appKey, default: 0.0] += joules
+                totalWindowJoules += joules
+            }
+        }
+
+        let sortedEnergyApps = appJoulesMap.sorted { $0.value > $1.value }
+        let topEnergy: [ProcessDisplayItem]
+
+        let batteryJoulesPerPercent = self.batteryJoulesPerPercent
+        if !sortedEnergyApps.isEmpty && totalWindowJoules > 0.0001 {
+            let maxPoints = (sortedEnergyApps.first?.value ?? 1.0) / batteryJoulesPerPercent
+            topEnergy = sortedEnergyApps.prefix(5).map { (appKey, joules) in
+                let batteryPoints = joules / batteryJoulesPerPercent
+                let fraction = min(1.0, max(0.02, batteryPoints / max(10.0, maxPoints)))
                 let text: String
-                if item.hasEnergyNj {
-                    fraction = min(1.0, max(0.01, item.powerWatts / 10.0))
-                    if item.powerWatts >= 1.0 {
-                        text = String(format: "%.1f W", item.powerWatts)
-                    } else {
-                        text = String(format: "%.0f mW", max(1.0, item.powerWatts * 1000.0))
-                    }
+                if batteryPoints >= 1.0 {
+                    text = String(format: "%.0f%%", batteryPoints)
+                } else if batteryPoints > 0.0 {
+                    text = "< 1%"
                 } else {
-                    fraction = min(1.0, max(0.01, item.energyScore / 50.0))
-                    text = String(format: "%.1f", item.energyScore)
+                    text = "0%"
                 }
-                let name = item.helperCount > 1 ? "\(item.name) (\(item.helperCount))" : item.name
-                let icon = self.cachedIcon(for: item.appPath)
+
+                let isSystem = (appKey == "system:macos")
+                let liveItem = allAggregated.first { self.resolveMeta(for: $0.primaryPid).mainKey == appKey }
+                let meta = self.trackedAppsMeta[appKey]
+
+                let baseName: String
+                if isSystem {
+                    baseName = "macOS System"
+                } else {
+                    let rawName = liveItem?.name ?? meta?.name ?? (appKey.starts(with: "pid:") ? "Process" : appKey)
+                    let helperCount = liveItem?.helperCount ?? 1
+                    baseName = helperCount > 1 ? "\(rawName) (\(helperCount))" : rawName
+                }
+
+                let appPath = isSystem ? "system:macos" : (liveItem?.appPath ?? meta?.appPath)
+                let icon = self.cachedIcon(for: appPath)
+                let pid = liveItem?.primaryPid ?? meta?.primaryPid ?? 0
+                let helperCount = isSystem ? 1 : (liveItem?.helperCount ?? 1)
+
                 return ProcessDisplayItem(
-                    pid: item.primaryPid,
-                    name: name,
+                    pid: pid,
+                    name: baseName,
                     icon: icon,
-                    helperCount: item.helperCount,
+                    helperCount: helperCount,
                     fraction: fraction,
                     formattedValue: text,
-                    normalizedCpuPercent: item.normalizedCpuPercent,
-                    memoryBytes: item.memoryBytes,
-                    energyScore: item.energyScore,
-                    isWatts: item.hasEnergyNj
+                    normalizedCpuPercent: liveItem?.normalizedCpuPercent ?? 0.0,
+                    memoryBytes: liveItem?.memoryBytes ?? 0,
+                    energyScore: joules,
+                    isWatts: false
                 )
             }
+        } else {
+            // Warm-up / initial launch: show active apps with 0% until deltas accumulate
+            topEnergy = allAggregated
+                .sorted { $0.normalizedCpuPercent > $1.normalizedCpuPercent }
+                .prefix(5)
+                .map { item in
+                    let name = (item.appPath == "system:macos" || item.name == "macOS System") ? "macOS System" : item.name
+                    return ProcessDisplayItem(
+                        pid: item.primaryPid,
+                        name: name,
+                        icon: self.cachedIcon(for: item.appPath),
+                        helperCount: item.helperCount,
+                        fraction: 0.02,
+                        formattedValue: "0%",
+                        normalizedCpuPercent: item.normalizedCpuPercent,
+                        memoryBytes: item.memoryBytes,
+                        energyScore: 0.0,
+                        isWatts: false
+                    )
+                }
+        }
 
         return TopProcessesSnapshot(
             cpu: Array(topCpu),
@@ -364,6 +513,13 @@ final class ProcessMonitor {
             let bundleId = app.bundleIdentifier ?? ""
             let name = app.localizedName ?? app.bundleIdentifier ?? "App \(pid)"
             let appPath = app.bundleURL.flatMap { findRootAppBundle(in: $0.path) }
+
+            // Internal system daemons without app bundle in user applications
+            let fullPath = app.bundleURL?.path ?? ""
+            if isSystemProcess(path: fullPath, bundleId: bundleId) {
+                return ResolvedMeta(mainKey: "system:macos", displayName: "macOS System", appPath: "system:macos")
+            }
+
             let mainKey = appPath ?? (!bundleId.isEmpty ? "bundle:\(bundleId)" : "pid:\(pid)")
             return ResolvedMeta(mainKey: mainKey, displayName: name, appPath: appPath)
         }
@@ -371,6 +527,11 @@ final class ProcessMonitor {
         var pathBuffer = [CChar](repeating: 0, count: 4096)
         if proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count)) > 0 {
             let path = String(cString: pathBuffer)
+
+            if isSystemProcess(path: path, bundleId: "") {
+                return ResolvedMeta(mainKey: "system:macos", displayName: "macOS System", appPath: "system:macos")
+            }
+
             if let rootApp = findRootAppBundle(in: path) {
                 if let cached = metaCache[rootApp] {
                     return cached
@@ -399,6 +560,47 @@ final class ProcessMonitor {
         return ResolvedMeta(mainKey: "pid:\(pid)", displayName: "PID \(pid)", appPath: nil)
     }
 
+    private lazy var batteryJoulesPerPercent: Double = {
+        detectBatteryJoulesPerPercent()
+    }()
+
+    private func detectBatteryJoulesPerPercent() -> Double {
+        let entry = IOServiceGetMatchingService(mach_port_t(0), IOServiceMatching("AppleSmartBattery"))
+        guard entry != 0 else { return 1878.0 }
+        defer { IOObjectRelease(entry) }
+
+        var props: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(entry, &props, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+              let dict = props?.takeRetainedValue() as? [String: Any] else {
+            return 1878.0
+        }
+
+        let voltage = (dict["Voltage"] as? Double) ?? 11500.0
+        let batteryData = dict["BatteryData"] as? [String: Any]
+        let rawMaxCap = (batteryData?["AppleRawMaxCapacity"] as? Double) ?? (dict["AppleRawMaxCapacity"] as? Double) ?? 4500.0
+
+        let totalJoules = (rawMaxCap * voltage / 1_000_000.0) * 3600.0
+        if totalJoules > 30_000 {
+            return totalJoules / 100.0
+        }
+        return 1878.0
+    }
+
+    private func isSystemProcess(path: String, bundleId: String) -> Bool {
+        // Any process inside /Applications or user directories or package managers is user software
+        if path.contains("/Applications/") || path.contains("/Users/") || path.contains("/opt/homebrew/") || path.contains("/usr/local/") {
+            return false
+        }
+        // Apple system daemons, core services, and private frameworks
+        if path.hasPrefix("/System/") || path.hasPrefix("/usr/libexec/") || path.hasPrefix("/usr/sbin/") || path.hasPrefix("/Library/Apple/") {
+            return true
+        }
+        if bundleId.hasPrefix("com.apple.") && !path.contains(".app") {
+            return true
+        }
+        return false
+    }
+
     private func findRootAppBundle(in path: String) -> String? {
         guard let range = path.range(of: ".app") else { return nil }
         return String(path[..<range.upperBound])
@@ -407,6 +609,20 @@ final class ProcessMonitor {
     private func cachedIcon(for appPath: String?) -> NSImage? {
         guard let appPath = appPath else {
             return defaultCliIcon()
+        }
+        if appPath == "system:macos" {
+            if let icon = iconCache["system:macos"] {
+                return icon
+            }
+            if #available(macOS 11.0, *) {
+                if let apple = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: "macOS System") {
+                    iconCache["system:macos"] = apple
+                    return apple
+                }
+            }
+            let icon = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
+            iconCache["system:macos"] = icon
+            return icon
         }
         if let icon = iconCache[appPath] {
             return icon

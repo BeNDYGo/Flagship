@@ -56,6 +56,16 @@ class Preferences {
         set { defaults.set(newValue, forKey: "temperatureAveragingWindow"); notify() }
     }
 
+    /// Window for process energy tracking in seconds (1800 = 30m, 3600 = 1h default, 7200 = 2h, 10800 = 3h, 18000 = 5h, 36000 = 10h).
+    var energyAveragingWindow: Int {
+        get {
+            let val = defaults.object(forKey: "energyAveragingWindow") as? Int ?? 3600
+            if val < 1800 { return 3600 }
+            return val
+        }
+        set { defaults.set(newValue, forKey: "energyAveragingWindow"); notify() }
+    }
+
     /// Whether to display a burst indicator (↑°C) when instant CPU temperature spikes significantly above rolling average.
     var highlightThermalSpikes: Bool {
         get { defaults.object(forKey: "highlightThermalSpikes") as? Bool ?? true }

@@ -32,7 +32,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     convenience init() {
         let windowWidth: CGFloat = 380
-        let contentHeight: CGFloat = 770
+        let contentHeight: CGFloat = 806
         let screenVisible = NSScreen.main?.visibleFrame.height ?? 900
         let windowHeight = min(contentHeight, screenVisible - 60)
 
@@ -49,7 +49,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor(white: 0.11, alpha: 1.0)
         window.center()
-        window.level = .floating
+        window.level = .normal
         window.appearance = NSAppearance(named: .darkAqua)
 
         self.init(window: window)
@@ -208,6 +208,35 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         contentView.addSubview(tempDropdown)
         y -= 36
 
+        let energyLabel = label("Energy Window", size: 13, weight: .regular, color: NSColor(white: 0.85, alpha: 1.0))
+        energyLabel.frame = NSRect(x: padding, y: y - 18, width: 200, height: 16)
+        contentView.addSubview(energyLabel)
+
+        let energyDropdown = NSPopUpButton(frame: NSRect(x: w - padding - 160, y: y - 22, width: 160, height: 24))
+        energyDropdown.font = NSFont.systemFont(ofSize: 11)
+        let energyWindows: [(String, Int)] = [
+            ("1 Hour (Default)", 3600),
+            ("30 Minutes", 1800),
+            ("2 Hours", 7200),
+            ("3 Hours", 10800),
+            ("5 Hours", 18000),
+            ("10 Hours", 36000)
+        ]
+        for (name, val) in energyWindows {
+            let item = NSMenuItem(title: name, action: #selector(energySmoothingChanged(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = val
+            energyDropdown.menu?.addItem(item)
+        }
+        let curEnergyWindow = prefs.energyAveragingWindow
+        if let idx = energyWindows.firstIndex(where: { $0.1 == curEnergyWindow }) {
+            energyDropdown.selectItem(at: idx)
+        } else {
+            energyDropdown.selectItem(at: 0)
+        }
+        contentView.addSubview(energyDropdown)
+        y -= 36
+
         // ── Country lookup providers ──
         y -= 4
         contentView.addSubview(makeSep(y: y))
@@ -350,6 +379,11 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
     @objc private func tempSmoothingChanged(_ sender: NSMenuItem) {
         guard let val = sender.representedObject as? Int else { return }
         Preferences.shared.temperatureAveragingWindow = val
+    }
+
+    @objc private func energySmoothingChanged(_ sender: NSMenuItem) {
+        guard let val = sender.representedObject as? Int else { return }
+        Preferences.shared.energyAveragingWindow = val
     }
 
     // MARK: - Interface list (delegates to NetworkInterfaceReader)

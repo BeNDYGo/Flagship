@@ -131,6 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         processMonitor.onUpdate = { [weak self] snapshot in
             self?.dashboard.updateTopProcesses(snapshot)
         }
+        processMonitor.start()
         
         // Trigger an initial fetch
         ipFetcher.fetch()
@@ -178,12 +179,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         dashboard.isMenuOpen = true
         dashboard.needsDisplay = true
-        processMonitor.start()
+        processMonitor.menuWillOpen()
     }
 
     func menuDidClose(_ menu: NSMenu) {
         dashboard.isMenuOpen = false
-        processMonitor.stop()
+        processMonitor.menuDidClose()
     }
 
     @objc func refreshIP() {
@@ -191,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func quitApp() {
+        processMonitor.stop()
         NSApplication.shared.terminate(nil)
     }
 }
