@@ -143,7 +143,9 @@ final class MetricsDashboardView: NSView {
         let sectionTitle: String
         if selectedCategory == .energy {
             let win = Preferences.shared.energyAveragingWindow
-            if win >= 3600 {
+            if Preferences.shared.energySinceUnplug, let mins = topProcesses?.energySinceUnplugMinutes {
+                sectionTitle = mins >= 60 ? "SINCE UNPLUG · \(mins / 60)H \(mins % 60)M" : "SINCE UNPLUG · \(mins)M"
+            } else if win >= 3600 {
                 let hours = win / 3600
                 sectionTitle = "TOP PROCESSES (\(hours)H ENERGY)"
             } else {
@@ -237,9 +239,10 @@ final class MetricsDashboardView: NSView {
                         gaugeColor = .systemBlue
                     }
                 case .energy:
-                    if item.fraction >= 0.60 {
+                    // Color by absolute drain rate (% of battery per hour)
+                    if item.energyRatePerHour >= 8.0 {
                         gaugeColor = NSColor(srgbRed: 1.0, green: 0.25, blue: 0.40, alpha: 1.0)
-                    } else if item.fraction >= 0.30 {
+                    } else if item.energyRatePerHour >= 3.0 {
                         gaugeColor = .systemOrange
                     } else {
                         gaugeColor = .systemTeal

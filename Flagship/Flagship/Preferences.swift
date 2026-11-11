@@ -66,6 +66,12 @@ class Preferences {
         set { defaults.set(newValue, forKey: "energyAveragingWindow"); notify() }
     }
 
+    /// When true, the energy list is counted from the moment the Mac was last unplugged (window setting is ignored).
+    var energySinceUnplug: Bool {
+        get { defaults.object(forKey: "energySinceUnplug") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "energySinceUnplug"); notify() }
+    }
+
     /// Whether to display a burst indicator (↑°C) when instant CPU temperature spikes significantly above rolling average.
     var highlightThermalSpikes: Bool {
         get { defaults.object(forKey: "highlightThermalSpikes") as? Bool ?? true }

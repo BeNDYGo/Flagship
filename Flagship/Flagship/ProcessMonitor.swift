@@ -31,12 +31,18 @@ public struct ProcessDisplayItem {
     public let memoryBytes: UInt64
     public let energyScore: Double
     public let isWatts: Bool
+
+    /// Energy tab only: battery drain attributed to this item, in % per hour (drives gauge color)
+    public var energyRatePerHour: Double = 0.0
 }
 
 public struct TopProcessesSnapshot {
     public let cpu: [ProcessDisplayItem]
     public let memory: [ProcessDisplayItem]
     public let energy: [ProcessDisplayItem]
+
+    /// Minutes since the Mac was unplugged; non-nil only when "since unplug" mode drives the energy window.
+    public var energySinceUnplugMinutes: Int? = nil
 
     public static let empty = TopProcessesSnapshot(cpu: [], memory: [], energy: [])
 }
@@ -55,9 +61,10 @@ final class ProcessMonitor {
     private var prevCpuSamples = [pid_t: (totalTicks: UInt64, time: TimeInterval)]()
     private var prevEnergyByPid = [pid_t: UInt64]()
 
-    private struct MinuteBucket {
+    private struct MinuteBucket: Codable {
         var minuteIndex: Int64
         var joulesByApp: [String: Double]
+        var batteryDrainPercent: Double = 0.0
     }
     private var energyBuckets: [MinuteBucket] = []
 
@@ -81,6 +88,46 @@ final class ProcessMonitor {
 
     init() {
         mach_timebase_info(&timebase)
+        loadPersistedState()
+    }
+
+    // MARK: - Persistence (energy buckets + unplug session)
+
+    private struct PersistedState: Codable {
+        var buckets: [MinuteBucket]
+        var sessionStartMinute: Int64?
+        var lastExternal: Bool?
+        var batteryRefLevel: Double?
+    }
+
+    private var sessionStartMinute: Int64?
+    private var lastExternal: Bool?
+    private var lastSavedMinute: Int64 = 0
+
+    private lazy var stateURL: URL? = {
+        guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let folder = dir.appendingPathComponent("Flagship", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("energy-state.json")
+    }()
+
+    private func loadPersistedState() {
+        guard let url = stateURL,
+              let data = try? Data(contentsOf: url),
+              let state = try? JSONDecoder().decode(PersistedState.self, from: data) else { return }
+        energyBuckets = state.buckets
+        sessionStartMinute = state.sessionStartMinute
+        lastExternal = state.lastExternal
+        batteryRefLevel = state.batteryRefLevel
+    }
+
+    private func savePersistedState() {
+        guard let url = stateURL else { return }
+        let state = PersistedState(buckets: energyBuckets, sessionStartMinute: sessionStartMinute,
+                                   lastExternal: lastExternal, batteryRefLevel: batteryRefLevel)
+        if let data = try? JSONEncoder().encode(state) {
+            try? data.write(to: url, options: .atomic)
+        }
     }
 
     func start() {
@@ -138,6 +185,7 @@ final class ProcessMonitor {
             self.warmUpTimer = nil
             self.prevCpuSamples.removeAll(keepingCapacity: true)
             self.prevEnergyByPid.removeAll(keepingCapacity: true)
+            self.savePersistedState()
         }
     }
 
@@ -192,11 +240,14 @@ final class ProcessMonitor {
     }
 
     private func sampleRawCandidates() -> [RawCandidate] {
-        var pids = [pid_t](repeating: 0, count: 2048)
-        let bytes = proc_listpids(UInt32(PROC_UID_ONLY), UInt32(getuid()), &pids, Int32(MemoryLayout<pid_t>.size * pids.count))
+        // All processes (including root daemons): their energy is attributed to "macOS System"
+        var pids = [pid_t](repeating: 0, count: 4096)
+        let bytes = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(MemoryLayout<pid_t>.size * pids.count))
         guard bytes > 0 else { return [] }
         let count = min(Int(bytes) / MemoryLayout<pid_t>.size, pids.count)
         let now = Date.timeIntervalSinceReferenceDate
+
+        updateBatteryDrain(now: now)
 
         var candidates: [RawCandidate] = []
         candidates.reserveCapacity(count)
@@ -210,7 +261,20 @@ final class ProcessMonitor {
 
             var taskInfo = proc_taskallinfo()
             let size = Int32(MemoryLayout<proc_taskallinfo>.size)
-            guard proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &taskInfo, size) > 0 else { continue }
+            guard proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &taskInfo, size) > 0 else {
+                // Not inspectable (typically root daemons): count energy only, as macOS System
+                var ru = rusage_info_v6()
+                let res = proc_pid_rusage(pid, RUSAGE_INFO_V6, withUnsafeMutablePointer(to: &ru) {
+                    UnsafeMutableRawPointer($0).assumingMemoryBound(to: rusage_info_t?.self)
+                })
+                if res == 0 && ru.ri_energy_nj > 0 {
+                    if let prev = prevEnergyByPid[pid], ru.ri_energy_nj >= prev {
+                        addEnergy(Double(ru.ri_energy_nj - prev) / 1_000_000_000.0, key: "system:macos", now: now)
+                    }
+                    prevEnergyByPid[pid] = ru.ri_energy_nj
+                }
+                continue
+            }
 
             let totalTicks = taskInfo.ptinfo.pti_total_user + taskInfo.ptinfo.pti_total_system
 
@@ -268,12 +332,9 @@ final class ProcessMonitor {
             }
 
             if deltaJoules > 0.0 {
-                let minuteIndex = Int64(now / 60.0)
-                if let lastIdx = energyBuckets.indices.last, energyBuckets[lastIdx].minuteIndex == minuteIndex {
-                    energyBuckets[lastIdx].joulesByApp[meta.mainKey, default: 0.0] += deltaJoules
-                } else {
-                    energyBuckets.append(MinuteBucket(minuteIndex: minuteIndex, joulesByApp: [meta.mainKey: deltaJoules]))
-                }
+                // Processes of other users (root daemons) belong to macOS System
+                let energyKey = taskInfo.pbsd.pbi_uid == getuid() ? meta.mainKey : "system:macos"
+                addEnergy(deltaJoules, key: energyKey, now: now)
             }
 
             candidates.append(RawCandidate(
@@ -290,10 +351,71 @@ final class ProcessMonitor {
         prevEnergyByPid = prevEnergyByPid.filter { activePids.contains($0.key) }
 
         let minuteIndex = Int64(now / 60.0)
-        let cutoffMinute = minuteIndex - 660 // 11 hours retention
+        let cutoffMinute = minuteIndex - 1440 // 24 hours retention
         energyBuckets.removeAll { $0.minuteIndex < cutoffMinute }
 
+        if minuteIndex != lastSavedMinute {
+            lastSavedMinute = minuteIndex
+            savePersistedState()
+        }
+
         return candidates
+    }
+
+    private func currentBucket(now: TimeInterval) -> Int {
+        let minuteIndex = Int64(now / 60.0)
+        if let lastIdx = energyBuckets.indices.last, energyBuckets[lastIdx].minuteIndex == minuteIndex {
+            return lastIdx
+        }
+        energyBuckets.append(MinuteBucket(minuteIndex: minuteIndex, joulesByApp: [:]))
+        return energyBuckets.count - 1
+    }
+
+    private func addEnergy(_ joules: Double, key: String, now: TimeInterval) {
+        guard joules > 0 else { return }
+        let idx = currentBucket(now: now)
+        energyBuckets[idx].joulesByApp[key, default: 0.0] += joules
+    }
+
+    private var batteryRefLevel: Double?
+
+    /// Battery level in percent (fractional, from raw capacity) and whether external power is connected.
+    private func readBatteryLevel() -> (level: Double, external: Bool)? {
+        let entry = IOServiceGetMatchingService(mach_port_t(0), IOServiceMatching("AppleSmartBattery"))
+        guard entry != 0 else { return nil }
+        defer { IOObjectRelease(entry) }
+        var props: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(entry, &props, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+              let dict = props?.takeRetainedValue() as? [String: Any] else { return nil }
+        let external = (dict["ExternalConnected"] as? Bool) ?? false
+        if let cur = dict["AppleRawCurrentCapacity"] as? Double,
+           let max = dict["AppleRawMaxCapacity"] as? Double, max > 0 {
+            return (cur / max * 100.0, external)
+        }
+        if let cur = dict["CurrentCapacity"] as? Double { return (cur, external) }
+        return nil
+    }
+
+    /// Accumulates real battery discharge (in %) into the current minute bucket.
+    private func updateBatteryDrain(now: TimeInterval) {
+        guard let (level, external) = readBatteryLevel() else { return }
+        let nowMinute = Int64(now / 60.0)
+        if let was = lastExternal {
+            if was && !external { sessionStartMinute = nowMinute }
+        } else if !external && sessionStartMinute == nil {
+            sessionStartMinute = nowMinute
+        }
+        lastExternal = external
+        guard let ref = batteryRefLevel else { batteryRefLevel = level; return }
+        if external {
+            batteryRefLevel = level
+        } else if ref - level >= 0.2 {
+            let idx = currentBucket(now: now)
+            energyBuckets[idx].batteryDrainPercent += ref - level
+            batteryRefLevel = level
+        } else if level > ref + 0.2 {
+            batteryRefLevel = level
+        }
     }
 
     private func sampleSnapshot() -> TopProcessesSnapshot {
@@ -418,12 +540,23 @@ final class ProcessMonitor {
         let windowSeconds = Preferences.shared.energyAveragingWindow
         let windowMinutes = max(1, Int64(ceil(Double(windowSeconds) / 60.0)))
         let currentMinute = Int64(Date.timeIntervalSinceReferenceDate / 60.0)
-        let startMinute = currentMinute - windowMinutes
+        let sinceUnplug = Preferences.shared.energySinceUnplug
+        let startMinute: Int64
+        if sinceUnplug, let session = sessionStartMinute {
+            startMinute = session
+        } else {
+            startMinute = currentMinute - windowMinutes
+        }
+        let effectiveWindowMinutes = max(1, currentMinute - startMinute)
 
         var appJoulesMap: [String: Double] = [:]
         var totalWindowJoules: Double = 0.0
+        var windowDrainPercent: Double = 0.0
+        var firstMinuteInWindow: Int64 = currentMinute
 
         for bucket in energyBuckets where bucket.minuteIndex >= startMinute {
+            firstMinuteInWindow = min(firstMinuteInWindow, bucket.minuteIndex)
+            windowDrainPercent += bucket.batteryDrainPercent
             for (appKey, joules) in bucket.joulesByApp {
                 appJoulesMap[appKey, default: 0.0] += joules
                 totalWindowJoules += joules
@@ -435,17 +568,23 @@ final class ProcessMonitor {
 
         let batteryJoulesPerPercent = self.batteryJoulesPerPercent
         if !sortedEnergyApps.isEmpty && totalWindowJoules > 0.0001 {
-            let maxPoints = (sortedEnergyApps.first?.value ?? 1.0) / batteryJoulesPerPercent
+            // Measured per-process energy covers only a fraction of real consumption (CPU side),
+            // so scale it to the actual battery discharge observed in the window.
+            // Without observed discharge (e.g. on AC) fall back to the raw joule estimate.
+            // Effective observed duration (the app may have run for less than the window), at least 5 min
+            let observedHours = Double(max(5, min(effectiveWindowMinutes, currentMinute - firstMinuteInWindow + 1))) / 60.0
+            let scale = windowDrainPercent > 0 ? windowDrainPercent / totalWindowJoules : 1.0 / batteryJoulesPerPercent
             topEnergy = sortedEnergyApps.prefix(5).map { (appKey, joules) in
-                let batteryPoints = joules / batteryJoulesPerPercent
-                let fraction = min(1.0, max(0.02, batteryPoints / max(10.0, maxPoints)))
+                let batteryPoints = joules * scale
+                // Gauge = share of total battery drain in the window (not relative to the leader)
+                let fraction = min(1.0, max(0.02, joules / max(0.0001, totalWindowJoules)))
                 let text: String
-                if batteryPoints >= 1.0 {
+                if batteryPoints >= 10.0 {
                     text = String(format: "%.0f%%", batteryPoints)
-                } else if batteryPoints > 0.0 {
-                    text = "< 1%"
+                } else if batteryPoints >= 0.1 {
+                    text = String(format: "%.1f%%", batteryPoints)
                 } else {
-                    text = "0%"
+                    text = "< 0.1%"
                 }
 
                 let isSystem = (appKey == "system:macos")
@@ -476,7 +615,8 @@ final class ProcessMonitor {
                     normalizedCpuPercent: liveItem?.normalizedCpuPercent ?? 0.0,
                     memoryBytes: liveItem?.memoryBytes ?? 0,
                     energyScore: joules,
-                    isWatts: false
+                    isWatts: false,
+                    energyRatePerHour: batteryPoints / observedHours
                 )
             }
         } else {
@@ -501,11 +641,15 @@ final class ProcessMonitor {
                 }
         }
 
-        return TopProcessesSnapshot(
+        var result = TopProcessesSnapshot(
             cpu: Array(topCpu),
             memory: Array(topRam),
             energy: Array(topEnergy)
         )
+        if sinceUnplug, sessionStartMinute != nil {
+            result.energySinceUnplugMinutes = Int(effectiveWindowMinutes)
+        }
+        return result
     }
 
     private func resolveMeta(for pid: pid_t) -> ResolvedMeta {

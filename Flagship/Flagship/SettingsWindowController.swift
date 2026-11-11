@@ -32,7 +32,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     convenience init() {
         let windowWidth: CGFloat = 380
-        let contentHeight: CGFloat = 806
+        let contentHeight: CGFloat = 836
         let screenVisible = NSScreen.main?.visibleFrame.height ?? 900
         let windowHeight = min(contentHeight, screenVisible - 60)
 
@@ -236,6 +236,12 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         }
         contentView.addSubview(energyDropdown)
         y -= 36
+
+        energyDropdown.isEnabled = !prefs.energySinceUnplug
+        _ = addToggle(to: contentView, y: &y, padding: padding, label: "Energy: Count Since Unplug", isOn: prefs.energySinceUnplug) { isOn in
+            prefs.energySinceUnplug = isOn
+            energyDropdown.isEnabled = !isOn
+        }
 
         // ── Country lookup providers ──
         y -= 4
