@@ -12,9 +12,7 @@
 
   <p>
     <b>English</b> |
-    <a href="README-RU.md">Русский</a> |
-    <a href="README-ZH.md">简体中文</a> |
-    <a href="README-JA.md">日本語</a>
+    <a href="README-RU.md">Русский</a>
   </p>
 
   <p>
