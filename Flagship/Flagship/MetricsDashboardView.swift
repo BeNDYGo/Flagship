@@ -6,18 +6,56 @@ final class MetricsDashboardView: NSView {
     override var isFlipped: Bool { true }
 
     private var topProcesses: TopProcessesSnapshot?
-    private var selectedCategory: ProcessCategory = .cpu
-    private let tabContainerRect = NSRect(x: 188, y: 313, width: 162, height: 21)
+    private var selectedCategory: ProcessCategory = .energy
+    private static let fullHeight: CGFloat = 408
+    /// Vertical space occupied by the tiles (cards + gap before the divider).
+    private static let cardsBlockHeight: CGFloat = 232
+    private let headerToggleRect = NSRect(x: 0, y: 0, width: 200, height: 30)
+
+    private var isCollapsed: Bool { Preferences.shared.liveActivityCollapsed }
+    /// Shift applied to the "top processes" section when tiles are hidden.
+    private var sectionOffset: CGFloat { isCollapsed ? -Self.cardsBlockHeight : 0 }
+    private var tabContainerRect: NSRect {
+        NSRect(x: 188, y: 273 + sectionOffset, width: 162, height: 21)
+    }
 
     init(history: MetricsHistory) {
         self.history = history
-        super.init(frame: NSRect(x: 0, y: 0, width: 364, height: 448))
+        super.init(frame: NSRect(x: 0, y: 0, width: 364, height: Self.fullHeight))
+        applyCollapsedLayout()
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Live CPU, memory, temperature, network history and top active processes")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func applyCollapsedLayout() {
+        let height = Self.fullHeight + sectionOffset
+        if frame.height != height { setFrameSize(NSSize(width: 364, height: height)) }
+    }
+
+    private func toggleCollapsed() {
+        Preferences.shared.liveActivityCollapsed.toggle()
+        applyCollapsedLayout()
+        needsDisplay = true
+    }
+
+    private func drawDisclosureTriangle(at origin: NSPoint, expanded: Bool) {
+        let path = NSBezierPath()
+        if expanded {
+            path.move(to: NSPoint(x: origin.x, y: origin.y))
+            path.line(to: NSPoint(x: origin.x + 8, y: origin.y))
+            path.line(to: NSPoint(x: origin.x + 4, y: origin.y + 5))
+        } else {
+            path.move(to: NSPoint(x: origin.x + 1, y: origin.y - 1))
+            path.line(to: NSPoint(x: origin.x + 6, y: origin.y + 2.5))
+            path.line(to: NSPoint(x: origin.x + 1, y: origin.y + 6))
+        }
+        path.close()
+        NSColor.secondaryLabelColor.setFill()
+        path.fill()
+    }
 
     func updateTopProcesses(_ snapshot: TopProcessesSnapshot) {
         self.topProcesses = snapshot
@@ -50,82 +88,68 @@ final class MetricsDashboardView: NSView {
         let network = history.network.filter { $0.time >= now - history.duration }
         let latest = system.last.flatMap { now - $0.time < 10 ? $0 : nil }
         let net = network.last.flatMap { now - $0.time < 15 ? $0 : nil }
-        label("LIVE ACTIVITY", rect: NSRect(x: 14, y: 10, width: 200, height: 16),
+        drawDisclosureTriangle(at: NSPoint(x: 14, y: 14), expanded: !isCollapsed)
+        label("LIVE ACTIVITY", rect: NSRect(x: 28, y: 10, width: 186, height: 16),
               size: 10, weight: .semibold, color: .labelColor)
-        label("5 MIN", rect: NSRect(x: 290, y: 10, width: 60, height: 16), alignment: .right)
+        if !isCollapsed {
+            label("5 MIN", rect: NSRect(x: 290, y: 10, width: 60, height: 16), alignment: .right)
+        }
 
-        let cpuRect = NSRect(x: 10, y: 34, width: 167, height: 126)
-        let ramRect = NSRect(x: 187, y: 34, width: 167, height: 126)
-        let tempRect = NSRect(x: 10, y: 170, width: 167, height: 126)
-        let netRect = NSRect(x: 187, y: 170, width: 167, height: 126)
-        let cpuColor = color(latest?.cpu ?? 0, warning: 50, high: 80)
-        let ramColor = MetricColors.memoryLevel(ramPercent: latest?.ramPercent,
-                                                swapMB: latest?.swapUsedMB,
-                                                totalUsedPercent: latest?.memoryPercent)
-        let tempColor = color(latest?.temperature ?? 0, warning: 70, high: 90)
+        if !isCollapsed {
+            let cpuRect = NSRect(x: 10, y: 34, width: 167, height: 106)
+            let ramRect = NSRect(x: 187, y: 34, width: 167, height: 106)
+            let tempRect = NSRect(x: 10, y: 150, width: 167, height: 106)
+            let netRect = NSRect(x: 187, y: 150, width: 167, height: 106)
+            let cpuColor = color(latest?.cpu ?? 0, warning: 50, high: 80)
+            let ramColor = MetricColors.memoryLevel(ramPercent: latest?.ramPercent,
+                                                    swapMB: latest?.swapUsedMB,
+                                                    totalUsedPercent: latest?.memoryPercent)
+            let tempColor = color(latest?.temperature ?? 0, warning: 70, high: 90)
 
-        card(cpuRect, title: "CPU", value: latest.map { String(format: "%.0f%%", $0.cpu) } ?? "—",
-             detail: "Total processor load", tint: cpuColor)
-        let ramGB = latest?.ramUsedGB ?? (latest?.memoryGB ?? 0)
-        let swapMB = latest?.swapUsedMB ?? 0
-        let totalUsedGB = latest?.memoryGB ?? ramGB
+            card(cpuRect, title: "CPU", value: latest.map { String(format: "%.0f%%", $0.cpu) } ?? "—", tint: cpuColor)
+            let ramGB = latest?.ramUsedGB ?? (latest?.memoryGB ?? 0)
+            let swapMB = latest?.swapUsedMB ?? 0
+            let totalUsedGB = latest?.memoryGB ?? ramGB
 
-        let ramDetailText: String
-        if latest != nil {
-            if swapMB >= 1024.0 {
-                ramDetailText = String(format: "%.1f GB RAM | %.1f GB Swap", ramGB, swapMB / 1024.0)
+            let ramTitleSuffix: String
+            if latest != nil {
+                let ramText = ramGB >= 1 ? String(format: "%.1fGB", ramGB) : String(format: "%.0fMB", ramGB * 1024)
+                let swapText = swapMB >= 1024 ? String(format: "%.1fGB", swapMB / 1024) : String(format: "%.0fMB", swapMB)
+                ramTitleSuffix = " · \(ramText) RAM + \(swapText) SWAP"
             } else {
-                ramDetailText = String(format: "%.1f GB RAM | %.0f MB Swap", ramGB, swapMB)
+                ramTitleSuffix = ""
             }
-        } else {
-            ramDetailText = "Waiting for sample"
-        }
+            card(ramRect, title: "MEMORY", titleSuffix: ramTitleSuffix, value: latest.map { _ in String(format: "%.1f GB", totalUsedGB) } ?? "—",
+                 tint: ramColor)
+            card(tempRect, title: "CPU TEMPERATURE", value: latest?.temperature.map { String(format: "%.0f °C", $0) } ?? "—",
+                 tint: tempColor)
+            card(netRect, title: "NETWORK", value: "", tint: .systemBlue)
+            let netColumnWidth = (netRect.width - 20) / 2
+            label(net.map { "↓ " + NetworkMonitor.formatSpeed($0.download) } ?? "↓ —",
+                  rect: NSRect(x: netRect.minX + 10, y: netRect.minY + 31, width: netColumnWidth, height: 18),
+                  size: 11, weight: .medium, color: .systemBlue)
+            label(net.map { "↑ " + NetworkMonitor.formatSpeed($0.upload) } ?? "↑ —",
+                  rect: NSRect(x: netRect.minX + 10 + netColumnWidth, y: netRect.minY + 31, width: netColumnWidth, height: 18),
+                  size: 11, weight: .medium, color: .systemPurple)
 
-        card(ramRect, title: "MEMORY", value: latest.map { _ in String(format: "%.1f GB", totalUsedGB) } ?? "—",
-             detail: ramDetailText, tint: ramColor)
-        let tempDetailText: String
-        let tempWindow = Preferences.shared.temperatureAveragingWindow
-        if let latest = latest, let avg = latest.temperature {
-            if tempWindow <= 1 {
-                tempDetailText = "Instant sensor mean"
-            } else if latest.isThermalSpike, let inst = latest.instantTemperature {
-                tempDetailText = String(format: "Now: %.0f°C (burst) • %ds", inst, tempWindow)
-            } else if let inst = latest.instantTemperature, abs(inst - avg) >= 3.0 {
-                tempDetailText = String(format: "Now: %.0f°C • %ds avg", inst, tempWindow)
-            } else {
-                tempDetailText = String(format: "Rolling %ds average", tempWindow)
+            plot(system.map { ($0.time, Optional($0.cpu)) }, in: plotRect(cpuRect), maxValue: 100, now: now, fill: true) {
+                self.color($0, warning: 50, high: 80)
             }
-        } else {
-            tempDetailText = "Mean across CPU sensors"
+            let currentSwapMB = system.last?.swapUsedMB
+            plot(system.map { ($0.time, Optional($0.memoryGB)) }, in: plotRect(ramRect),
+                 maxValue: system.last?.totalMemoryGB ?? 1, now: now, fill: true) {
+                let percent = $0 / max(system.last?.totalMemoryGB ?? 1, 1) * 100
+                return MetricColors.memoryLevel(ramPercent: percent, swapMB: currentSwapMB)
+            }
+            plot(system.map { ($0.time, $0.temperature) }, in: plotRect(tempRect), maxValue: 110, now: now, fill: true) {
+                self.color($0, warning: 70, high: 90)
+            }
+            let netMax = max(1000, network.map { max($0.upload, $0.download) }.max() ?? 0) * 1.1
+            plot(network.map { ($0.time, Optional($0.download)) }, in: plotRect(netRect), maxValue: netMax, now: now,
+                 grid: true, maxGap: 15) { _ in .systemBlue }
+            plot(network.map { ($0.time, Optional($0.upload)) }, in: plotRect(netRect), maxValue: netMax, now: now,
+                 grid: false, maxGap: 15) { _ in .systemPurple }
         }
-
-        card(tempRect, title: "CPU TEMPERATURE", value: latest?.temperature.map { String(format: "%.0f °C", $0) } ?? "—",
-             detail: tempDetailText, tint: tempColor)
-        card(netRect, title: "NETWORK", value: "", detail: "", tint: .systemBlue)
-        label(net.map { "↓ " + NetworkMonitor.formatSpeed($0.download) } ?? "↓ —",
-              rect: NSRect(x: netRect.minX + 12, y: netRect.minY + 29, width: 143, height: 20),
-              size: 13, weight: .medium, color: .systemBlue)
-        label(net.map { "↑ " + NetworkMonitor.formatSpeed($0.upload) } ?? "↑ —",
-              rect: NSRect(x: netRect.minX + 12, y: netRect.minY + 51, width: 143, height: 16),
-              size: 10, color: .systemPurple)
-
-        plot(system.map { ($0.time, Optional($0.cpu)) }, in: plotRect(cpuRect), maxValue: 100, now: now) {
-            self.color($0, warning: 50, high: 80)
-        }
-        let currentSwapMB = system.last?.swapUsedMB
-        plot(system.map { ($0.time, Optional($0.memoryGB)) }, in: plotRect(ramRect),
-             maxValue: system.last?.totalMemoryGB ?? 1, now: now) {
-            let percent = $0 / max(system.last?.totalMemoryGB ?? 1, 1) * 100
-            return MetricColors.memoryLevel(ramPercent: percent, swapMB: currentSwapMB)
-        }
-        plot(system.map { ($0.time, $0.temperature) }, in: plotRect(tempRect), maxValue: 110, now: now) {
-            self.color($0, warning: 70, high: 90)
-        }
-        let netMax = max(1000, network.map { max($0.upload, $0.download) }.max() ?? 0) * 1.1
-        plot(network.map { ($0.time, Optional($0.download)) }, in: plotRect(netRect), maxValue: netMax, now: now,
-             grid: true, maxGap: 15) { _ in .systemBlue }
-        plot(network.map { ($0.time, Optional($0.upload)) }, in: plotRect(netRect), maxValue: netMax, now: now,
-             grid: false, maxGap: 15) { _ in .systemPurple }
 
         // ==========================================
         // TOP PROCESSES SECTION
@@ -134,8 +158,8 @@ final class MetricsDashboardView: NSView {
         // Divider
         NSColor.labelColor.withAlphaComponent(0.08).setStroke()
         let divider = NSBezierPath()
-        divider.move(to: NSPoint(x: 14, y: 306))
-        divider.line(to: NSPoint(x: 350, y: 306))
+        divider.move(to: NSPoint(x: 14, y: 266 + sectionOffset))
+        divider.line(to: NSPoint(x: 350, y: 266 + sectionOffset))
         divider.lineWidth = 0.5
         divider.stroke()
 
@@ -155,7 +179,7 @@ final class MetricsDashboardView: NSView {
         } else {
             sectionTitle = "TOP PROCESSES"
         }
-        label(sectionTitle, rect: NSRect(x: 14, y: 316, width: 164, height: 16),
+        label(sectionTitle, rect: NSRect(x: 14, y: 276 + sectionOffset, width: 164, height: 16),
               size: 10, weight: .semibold, color: .labelColor)
 
         // Segmented Pill Control (CPU / RAM / Energy)
@@ -192,11 +216,11 @@ final class MetricsDashboardView: NSView {
         }
 
         if items.isEmpty {
-            label("Sampling active processes…", rect: NSRect(x: 14, y: 378, width: 336, height: 16),
+            label("Sampling active processes…", rect: NSRect(x: 14, y: 338 + sectionOffset, width: 336, height: 16),
                   size: 10, color: .tertiaryLabelColor, alignment: .center)
         } else {
             for (i, item) in items.prefix(5).enumerated() {
-                let rowY = 340.0 + CGFloat(i) * 21.0
+                let rowY = 300.0 + sectionOffset + CGFloat(i) * 21.0
 
                 // 1. Icon (16x16)
                 let iconRect = NSRect(x: 14, y: rowY + 1.5, width: 16, height: 16)
@@ -267,6 +291,12 @@ final class MetricsDashboardView: NSView {
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
 
+        // 0. Collapse / expand the tiles
+        if headerToggleRect.contains(loc) {
+            toggleCollapsed()
+            return
+        }
+
         // 1. Tab switching (swallow event so NSMenu does not dismiss)
         if tabContainerRect.contains(loc) {
             let segWidth = tabContainerRect.width / CGFloat(ProcessCategory.allCases.count)
@@ -282,22 +312,35 @@ final class MetricsDashboardView: NSView {
         super.mouseDown(with: event)
     }
 
-    private func card(_ rect: NSRect, title: String, value: String, detail: String, tint: NSColor) {
+    private func card(_ rect: NSRect, title: String, titleSuffix: String = "", value: String, tint: NSColor) {
         NSColor.labelColor.withAlphaComponent(0.045).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
-        label(title, rect: NSRect(x: rect.minX + 12, y: rect.minY + 11, width: rect.width - 24, height: 14),
-              size: 9, weight: .semibold)
-        label(value, rect: NSRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 25),
+        if titleSuffix.isEmpty {
+            label(title, rect: NSRect(x: rect.minX + 12, y: rect.minY + 11, width: rect.width - 24, height: 14),
+                  size: 9, weight: .semibold)
+        } else {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            let text = NSMutableAttributedString(string: title, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph
+            ])
+            text.append(NSAttributedString(string: titleSuffix, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 6.5, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph
+            ]))
+            text.draw(in: NSRect(x: rect.minX + 12, y: rect.minY + 11, width: rect.width - 16, height: 14))
+        }
+        label(value, rect: NSRect(x: rect.minX + 12, y: rect.minY + 27, width: rect.width - 24, height: 25),
               size: 20, weight: .medium, color: tint)
-        label(detail, rect: NSRect(x: rect.minX + 12, y: rect.minY + 55, width: rect.width - 24, height: 14), size: 9)
     }
 
     private func plotRect(_ card: NSRect) -> NSRect {
-        NSRect(x: card.minX + 12, y: card.minY + 80, width: card.width - 24, height: 34)
+        NSRect(x: card.minX + 12, y: card.minY + 60, width: card.width - 24, height: 34)
     }
 
     private func plot(_ points: [(TimeInterval, Double?)], in rect: NSRect, maxValue: Double,
-                      now: TimeInterval, grid: Bool = true, maxGap: TimeInterval = 3,
+                      now: TimeInterval, grid: Bool = true, fill: Bool = false, maxGap: TimeInterval = 3,
                       tint: (Double) -> NSColor) {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -324,6 +367,19 @@ final class MetricsDashboardView: NSView {
                 line.line(to: point)
                 line.lineWidth = 1.5
                 line.lineCapStyle = .round
+                if fill {
+                    NSGraphicsContext.saveGraphicsState()
+                    let area = NSBezierPath()
+                    area.move(to: last.1)
+                    area.line(to: point)
+                    area.line(to: NSPoint(x: point.x, y: rect.maxY))
+                    area.line(to: NSPoint(x: last.1.x, y: rect.maxY))
+                    area.close()
+                    area.addClip()
+                    NSGradient(starting: color.withAlphaComponent(0.30), ending: color.withAlphaComponent(0))?
+                        .draw(from: NSPoint(x: 0, y: min(last.1.y, point.y)), to: NSPoint(x: 0, y: rect.maxY), options: [])
+                    NSGraphicsContext.restoreGraphicsState()
+                }
                 color.setStroke()
                 line.stroke()
             } else {

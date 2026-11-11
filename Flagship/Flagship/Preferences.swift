@@ -78,6 +78,12 @@ class Preferences {
         set { defaults.set(newValue, forKey: "highlightThermalSpikes"); notify() }
     }
 
+    /// Whether the CPU / Memory / Temperature / Network tiles in the dropdown are collapsed.
+    var liveActivityCollapsed: Bool {
+        get { defaults.bool(forKey: "liveActivityCollapsed") }
+        set { defaults.set(newValue, forKey: "liveActivityCollapsed") }
+    }
+
     var showFlag: Bool {
         get { defaults.object(forKey: "showFlag") as? Bool ?? true }
         set { 
