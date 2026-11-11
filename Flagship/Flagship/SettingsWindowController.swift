@@ -95,7 +95,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         y -= 22
 
         // ── Version ──
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.2"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0"
         let vLabel = label("v\(version)", size: 11, weight: .regular, color: NSColor(white: 0.5, alpha: 1.0))
         vLabel.frame = NSRect(x: 0, y: y - 14, width: w, height: 14)
         vLabel.alignment = .center
