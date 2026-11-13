@@ -32,7 +32,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
 
     convenience init() {
         let windowWidth: CGFloat = 380
-        let contentHeight: CGFloat = 836
+        let contentHeight: CGFloat = 866
         let screenVisible = NSScreen.main?.visibleFrame.height ?? 900
         let windowHeight = min(contentHeight, screenVisible - 60)
 
@@ -116,6 +116,7 @@ class SettingsWindowController: NSWindowController, NSMenuDelegate {
         flagToggle = addToggle(to: contentView, y: &y, padding: padding, label: "Show Country Flag", isOn: prefs.showFlag) { prefs.showFlag = $0 }
         arrowsToggle = addToggle(to: contentView, y: &y, padding: padding, label: "Show Arrows", isOn: prefs.showArrows) { prefs.showArrows = $0 }
         ipToggle = addToggle(to: contentView, y: &y, padding: padding, label: "Show IP Instead of Flag", isOn: prefs.showIPInsteadOfFlag) { prefs.showIPInsteadOfFlag = $0 }
+        _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show IP in Menu", isOn: prefs.showIPInMenu) { prefs.showIPInMenu = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show CPU Usage", isOn: prefs.showCPU) { prefs.showCPU = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Show Memory Usage", isOn: prefs.showMemory) { prefs.showMemory = $0 }
         _ = addToggle(to: contentView, y: &y, padding: padding, label: "Add Swap to Menu Bar Memory", isOn: prefs.addSwapToMenuBarMemory) { prefs.addSwapToMenuBarMemory = $0 }
