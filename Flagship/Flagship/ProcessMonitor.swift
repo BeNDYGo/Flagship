@@ -86,7 +86,19 @@ final class ProcessMonitor {
     private var metaCache = [String: ResolvedMeta]()
     private var iconCache = [String: NSImage]()
 
-    init() {
+    // Private libSystem API: load dynamically so older/future macOS versions can
+    // keep using bundle/path grouping if the symbol is unavailable.
+    private static let systemResponsiblePID: ((pid_t) -> pid_t)? = {
+        let defaultHandle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+        guard let symbol = dlsym(defaultHandle, "responsibility_get_pid_responsible_for_pid") else { return nil }
+        typealias ResponsiblePIDFunction = @convention(c) (pid_t) -> pid_t
+        let function = unsafeBitCast(symbol, to: ResponsiblePIDFunction.self)
+        return { function($0) }
+    }()
+    private let responsiblePID: ((pid_t) -> pid_t)?
+
+    init(responsiblePID: ((pid_t) -> pid_t)? = ProcessMonitor.systemResponsiblePID) {
+        self.responsiblePID = responsiblePID
         mach_timebase_info(&timebase)
         loadPersistedState()
     }
@@ -232,6 +244,7 @@ final class ProcessMonitor {
 
     private struct RawCandidate {
         let pid: pid_t
+        let meta: ResolvedMeta
         let normalizedCpuPercent: Double
         let memoryBytes: UInt64
         let powerWatts: Double
@@ -339,6 +352,7 @@ final class ProcessMonitor {
 
             candidates.append(RawCandidate(
                 pid: pid,
+                meta: meta,
                 normalizedCpuPercent: normalizedCpuPercent,
                 memoryBytes: memoryBytes,
                 powerWatts: 0.0,
@@ -439,7 +453,7 @@ final class ProcessMonitor {
         aggregated.reserveCapacity(candidates.count)
 
         for candidate in candidates {
-            let meta = resolveMeta(for: candidate.pid)
+            let meta = candidate.meta
             if var existing = aggregated[meta.mainKey] {
                 existing.helperCount += 1
                 if candidate.normalizedCpuPercent > existing.maxCandidateCpu {
@@ -653,6 +667,20 @@ final class ProcessMonitor {
     }
 
     private func resolveMeta(for pid: pid_t) -> ResolvedMeta {
+        // XPC services (WebKit, video decoders, etc.) are children of launchd,
+        // but macOS tracks the application responsible for each service.
+        // Resolve that owner before classifying a system executable as macOS.
+        if let ownerPID = responsiblePID?(pid), ownerPID > 1, ownerPID != pid,
+           let owner = NSRunningApplication(processIdentifier: ownerPID), !owner.isTerminated,
+           let appPath = owner.bundleURL.flatMap({ findRootAppBundle(in: $0.path) }),
+           !isSystemProcess(path: appPath, bundleId: owner.bundleIdentifier ?? "") {
+            let name = owner.localizedName ?? URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
+            return ResolvedMeta(mainKey: appPath, displayName: name, appPath: appPath)
+        }
+
+        // No API, self-responsible process, or no live application owner:
+        // preserve the existing bundle/path classification. Ownership is not
+        // cached by executable path, since shared services have many clients.
         if let app = NSRunningApplication(processIdentifier: pid) {
             let bundleId = app.bundleIdentifier ?? ""
             let name = app.localizedName ?? app.bundleIdentifier ?? "App \(pid)"
