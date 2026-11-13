@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var dashboard = MetricsDashboardView(history: history)
     private var monitorStarted = false
     private var monitorInterface: String?
+    private var ipMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Create the status item with variable length initially
@@ -38,6 +39,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboardItem.view = dashboard
         menu.addItem(dashboardItem)
         menu.addItem(NSMenuItem.separator())
+
+        let ipItem = NSMenuItem(title: currentIPTitle(), action: nil, keyEquivalent: "")
+        ipItem.isEnabled = false
+        ipItem.isHidden = !Preferences.shared.showIPInMenu
+        menu.addItem(ipItem)
+        self.ipMenuItem = ipItem
 
         let refreshItem = NSMenuItem(title: "Refresh IP", action: #selector(refreshIP), keyEquivalent: "r")
         menu.addItem(refreshItem)
@@ -75,6 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.currentIP = ipString
             self.menuBarView.updateFlag(flag, ip: ipString)
             self.updateMenuBarWidth()
+            self.updateIPMenuItem()
         }
         
         // Listen for preference changes
@@ -145,6 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         startNetworkMonitor() // Restart timer if interval changed
         menuBarView.applyPreferences()
         updateMenuBarWidth()
+        updateIPMenuItem()
 
         // If the Settings window is not currently on screen, drop the cached
         // controller so the next openSettings() rebuilds it from the (possibly
@@ -158,6 +167,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateMenuBarWidth() {
         let optimalLength = menuBarView.calculateOptimalWidth()
         statusItem.length = optimalLength
+    }
+    
+    private func currentIPTitle() -> String {
+        if currentIP.isEmpty || currentIP == "..." {
+            return "IP: ..."
+        } else if currentIP.contains("Checking") {
+            return "IP: Checking…"
+        } else if currentIP.contains("unavailable") {
+            return "IP: Unavailable"
+        } else {
+            return "IP: \(currentIP)"
+        }
+    }
+
+    private func updateIPMenuItem() {
+        guard let ipMenuItem = ipMenuItem else { return }
+        ipMenuItem.title = currentIPTitle()
+        ipMenuItem.isEnabled = false
+        ipMenuItem.isHidden = !Preferences.shared.showIPInMenu
     }
     
     private func startNetworkMonitor() {
@@ -180,6 +208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.isMenuOpen = true
         dashboard.needsDisplay = true
         processMonitor.menuWillOpen()
+        updateIPMenuItem()
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -189,6 +218,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func refreshIP() {
         ipFetcher.fetch(force: true)
+        updateIPMenuItem()
     }
 
     @objc func quitApp() {

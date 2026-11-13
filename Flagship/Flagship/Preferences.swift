@@ -107,6 +107,14 @@ class Preferences {
             notify()
         }
     }
+
+    var showIPInMenu: Bool {
+        get { defaults.object(forKey: "showIPInMenu") as? Bool ?? true }
+        set {
+            defaults.set(newValue, forKey: "showIPInMenu")
+            notify()
+        }
+    }
     
     // Speed Display Mode: 0 = Both, 1 = Upload Only, 2 = Download Only
     var displayMode: Int {
