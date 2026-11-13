@@ -3,7 +3,7 @@
   <h1>Flagship</h1>
 
   <p>
-    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.3.0-007AFF?style=flat-square" alt="Version"></a>
+    <a href="https://github.com/BeNDYGo/Flagship/releases"><img src="https://img.shields.io/badge/version-1.3.1-007AFF?style=flat-square" alt="Version"></a>
     <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-13.0%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+"></a>
     <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
     <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
