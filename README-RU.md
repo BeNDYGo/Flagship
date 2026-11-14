@@ -8,6 +8,7 @@
     <img src="https://img.shields.io/badge/arch-Universal%20(arm64%20|%20x86__64)-2ea44f?style=flat-square" alt="Universal Binary">
     <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-Native-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
+    <a href="https://github.com/USER/REPO"><img src="https://img.shields.io/github/stars/BeNDYGo/Flagship?style=social" alt="GitHub stars">
   </p>
 
   <p>
